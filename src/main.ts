@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { CustomCamera } from './Camera';
 import { CustomRenderer } from './Renderer';
 import { CustomScene } from './Scene';
+import { InputManager } from './InputManager';
 
 class ThreeJSApp {
     private camera!: CustomCamera;
     private renderer!: CustomRenderer;
     private scene!: CustomScene;
+    private inputManager!: InputManager;
     private cube!: THREE.Mesh;
+    private lastTime: number = 0;
 
     constructor() {
         this.init();
@@ -18,9 +21,10 @@ class ThreeJSApp {
         this.camera = new CustomCamera();
         this.renderer = new CustomRenderer();
         this.scene = new CustomScene();
+        this.inputManager = new InputManager();
 
-        // Create initial objects
-        this.createInitialObjects();
+        // Create the world
+        this.createWorld();
 
         // Start the animation loop
         this.startAnimation();
@@ -30,30 +34,45 @@ class ThreeJSApp {
         console.log(this.camera.getInfo());
     }
 
-    private createInitialObjects(): void {
+    private createWorld(): void {
+        // Create ground
+        this.scene.createGround(100);
+        
         // Create the original cube with MeshNormalMaterial for the rainbow effect
-        const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
         const material = new THREE.MeshNormalMaterial();
         this.cube = new THREE.Mesh(geometry, material);
+        this.cube.position.set(0, 1, 0);
+        this.cube.castShadow = true;
+        this.cube.receiveShadow = true;
         this.scene.addMesh(this.cube);
 
-        // You can add more objects here
-        // Example: Add a sphere
-        // this.scene.createSphere(0.1, 0x00ff00, new THREE.Vector3(0.5, 0, 0));
+        // Populate with random objects
+        this.scene.populateWithRandomObjects(30);
+        
+        // Add some large landmark objects
+        this.scene.createCube(3, 0x8b4513, new THREE.Vector3(10, 1.5, 10)); // Brown cube
+        this.scene.createSphere(2, 0x4169e1, new THREE.Vector3(-10, 2, -10)); // Blue sphere
+        this.scene.createCube(2, 0xff1493, new THREE.Vector3(15, 1, -15)); // Pink cube
     }
 
     private startAnimation(): void {
-        this.renderer.startAnimationLoop((_time: number) => {
-            this.update();
+        this.renderer.startAnimationLoop((time: number) => {
+            const deltaTime = this.lastTime === 0 ? 0 : (time - this.lastTime) / 1000;
+            this.lastTime = time;
+            
+            this.update(deltaTime);
             this.render();
         });
     }
 
-    private update(): void {
-        // Cube rotation animation removed - cube will stay static
+    private update(deltaTime: number): void {
+        // Update camera based on input
+        this.camera.update(this.inputManager, deltaTime);
+        
         // You can add other update logic here if needed
-        // Example: Update other objects that should animate
-        // this.scene.animateMeshes(time);
+        // Example: animate other objects
+        // this.cube.rotation.y += deltaTime;
     }
 
     private render(): void {
@@ -83,7 +102,7 @@ class ThreeJSApp {
 
     public clearScene(): void {
         this.scene.clearScene();
-        this.createInitialObjects();
+        this.createWorld();
     }
 
     public takeScreenshot(): void {
@@ -102,6 +121,7 @@ class ThreeJSApp {
     // Cleanup method
     public dispose(): void {
         this.renderer.dispose();
+        this.inputManager.dispose();
         this.scene.clearScene();
     }
 }
@@ -139,6 +159,7 @@ document.addEventListener('keydown', (event) => {
 
 console.log('Controls:');
 console.log('- Click anywhere to enable mouse look (pointer lock)');
-console.log('- Move mouse to rotate camera');
+console.log('- WASD to move, Space to go up, Shift to go down');
+console.log('- Hold Shift while moving to sprint');
 console.log('- ESC to exit pointer lock');
 console.log('- C = Add Cube, S = Add Sphere, R = Reset Scene, P = Screenshot, I = Info');

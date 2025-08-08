@@ -17,8 +17,12 @@ export class CustomRenderer extends THREE.WebGLRenderer {
         this.setSize(window.innerWidth, window.innerHeight);
         this.setPixelRatio(window.devicePixelRatio);
         
-        // Optional: Set background color
-        this.setClearColor(0x000000, 1);
+        // Enable shadows
+        this.shadowMap.enabled = true;
+        this.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // Set background color (sky blue)
+        this.setClearColor(0x87ceeb, 1);
         
         // Remove default margins and padding to ensure full canvas coverage
         this.setupBodyStyles();
