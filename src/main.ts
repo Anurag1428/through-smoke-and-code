@@ -43,19 +43,16 @@ class ThreeJSApp {
     }
 
     private startAnimation(): void {
-        this.renderer.startAnimationLoop((time: number) => {
-            this.update(time);
+        this.renderer.startAnimationLoop((_time: number) => {
+            this.update();
             this.render();
         });
     }
 
-    private update(time: number): void {
-        // Update the original cube rotation
-        this.cube.rotation.x = time / 2000;
-        this.cube.rotation.y = time / 1000;
-
-        // You can add more update logic here
-        // Example: Update all meshes in scene
+    private update(): void {
+        // Cube rotation animation removed - cube will stay static
+        // You can add other update logic here if needed
+        // Example: Update other objects that should animate
         // this.scene.animateMeshes(time);
     }
 

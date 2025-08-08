@@ -44,8 +44,11 @@ export class CustomCamera extends THREE.PerspectiveCamera {
 
         this.euler.setFromQuaternion(this.quaternion);
 
-        this.euler.y -= movementX * this.mouseSensitivity;
-        this.euler.x -= movementY * this.mouseSensitivity;
+        // Fixed controls: 
+        // Moving mouse right (positive movementX) should rotate camera right (add to Y)
+        // Moving mouse up (negative movementY) should look up (add to X)
+        this.euler.y += movementX * this.mouseSensitivity;
+        this.euler.x += movementY * this.mouseSensitivity;
 
         // Limit vertical rotation to prevent camera flipping
         this.euler.x = Math.max(-this.PI_2, Math.min(this.PI_2, this.euler.x));
