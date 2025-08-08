@@ -133,7 +133,15 @@ document.addEventListener('keydown', (event) => {
         case 'KeyI':
             app.getStats();
             break;
+        case 'Escape':
+            // Exit pointer lock on Escape key
+            document.exitPointerLock();
+            break;
     }
 });
 
-console.log('Controls: C = Add Cube, S = Add Sphere, R = Reset Scene, P = Screenshot, I = Info');
+console.log('Controls:');
+console.log('- Click anywhere to enable mouse look (pointer lock)');
+console.log('- Move mouse to rotate camera');
+console.log('- ESC to exit pointer lock');
+console.log('- C = Add Cube, S = Add Sphere, R = Reset Scene, P = Screenshot, I = Info');
