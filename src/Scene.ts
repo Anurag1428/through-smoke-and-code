@@ -11,13 +11,25 @@ export class CustomScene extends THREE.Scene {
 
     private setupDefaultLighting(): void {
         // Add ambient light for general illumination
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
         this.addLight(ambientLight);
 
-        // Add directional light for shadows and definition
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(5, 5, 5);
+        // Add directional light (sun-like)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(10, 20, 10);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -25;
+        directionalLight.shadow.camera.right = 25;
+        directionalLight.shadow.camera.top = 25;
+        directionalLight.shadow.camera.bottom = -25;
         this.addLight(directionalLight);
+
+        // Add some point lights for atmosphere
+        this.addRandomPointLights();
     }
 
     // Custom method to add meshes with tracking
@@ -83,6 +95,8 @@ export class CustomScene extends THREE.Scene {
         const cube = new THREE.Mesh(geometry, material);
         
         cube.position.copy(position);
+        cube.castShadow = true;
+        cube.receiveShadow = true;
         this.addMesh(cube);
         
         return cube;
@@ -99,9 +113,68 @@ export class CustomScene extends THREE.Scene {
         const sphere = new THREE.Mesh(geometry, material);
         
         sphere.position.copy(position);
+        sphere.castShadow = true;
+        sphere.receiveShadow = true;
         this.addMesh(sphere);
         
         return sphere;
+    }
+
+    // Create a large ground plane
+    public createGround(size: number = 50): THREE.Mesh {
+        const geometry = new THREE.PlaneGeometry(size, size);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0x2d5a2d,
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        const ground = new THREE.Mesh(geometry, material);
+        
+        ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+        ground.position.y = 0;
+        ground.receiveShadow = true;
+        this.addMesh(ground);
+        
+        return ground;
+    }
+
+    // Add random point lights for atmosphere
+    private addRandomPointLights(): void {
+        const colors = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xfeca57, 0xff9ff3];
+        
+        for (let i = 0; i < 5; i++) {
+            const pointLight = new THREE.PointLight(colors[i], 0.5, 10);
+            pointLight.position.set(
+                (Math.random() - 0.5) * 30,
+                2 + Math.random() * 3,
+                (Math.random() - 0.5) * 30
+            );
+            this.addLight(pointLight);
+        }
+    }
+
+    // Generate random objects scattered around the scene
+    public populateWithRandomObjects(count: number = 20): void {
+        const shapes = ['cube', 'sphere'];
+        const colors = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xfeca57, 0xff9ff3, 0x96ceb4, 0xffeaa7];
+        
+        for (let i = 0; i < count; i++) {
+            const shape = shapes[Math.floor(Math.random() * shapes.length)];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const position = new THREE.Vector3(
+                (Math.random() - 0.5) * 40, // Spread across ground
+                0.5 + Math.random() * 2,    // Above ground
+                (Math.random() - 0.5) * 40
+            );
+            
+            if (shape === 'cube') {
+                const size = 0.5 + Math.random() * 1.5;
+                this.createCube(size, color, position);
+            } else {
+                const radius = 0.3 + Math.random() * 0.8;
+                this.createSphere(radius, color, position);
+            }
+        }
     }
 
     // Method to clear all custom objects
