@@ -1,165 +1,183 @@
-import * as THREE from 'three';
-import { CustomCamera } from './Camera';
-import { CustomRenderer } from './Renderer';
-import { CustomScene } from './Scene';
-import { InputManager } from './InputManager';
+// main.ts - Simple test version to debug issues
+import * as THREE from "three";
 
-class ThreeJSApp {
-    private camera!: CustomCamera;
-    private renderer!: CustomRenderer;
-    private scene!: CustomScene;
-    private inputManager!: InputManager;
-    private cube!: THREE.Mesh;
-    private lastTime: number = 0;
+// Simple scene setup first - no physics yet
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 
-    constructor() {
-        this.init();
-    }
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    private init(): void {
-        // Initialize core components
-        this.camera = new CustomCamera();
-        this.renderer = new CustomRenderer();
-        this.scene = new CustomScene();
-        this.inputManager = new InputManager();
-
-        // Create the world
-        this.createWorld();
-
-        // Start the animation loop
-        this.startAnimation();
-
-        // Log initial stats
-        console.log('Scene Stats:', this.scene.getStats());
-        console.log(this.camera.getInfo());
-    }
-
-    private createWorld(): void {
-        // Create ground
-        this.scene.createGround(100);
-        
-        // Create the original cube with MeshNormalMaterial for the rainbow effect
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshNormalMaterial();
-        this.cube = new THREE.Mesh(geometry, material);
-        this.cube.position.set(0, 1, 0);
-        this.cube.castShadow = true;
-        this.cube.receiveShadow = true;
-        this.scene.addMesh(this.cube);
-
-        // Populate with random objects
-        this.scene.populateWithRandomObjects(30);
-        
-        // Add some large landmark objects
-        this.scene.createCube(3, 0x8b4513, new THREE.Vector3(10, 1.5, 10)); // Brown cube
-        this.scene.createSphere(2, 0x4169e1, new THREE.Vector3(-10, 2, -10)); // Blue sphere
-        this.scene.createCube(2, 0xff1493, new THREE.Vector3(15, 1, -15)); // Pink cube
-    }
-
-    private startAnimation(): void {
-        this.renderer.startAnimationLoop((time: number) => {
-            const deltaTime = this.lastTime === 0 ? 0 : (time - this.lastTime) / 1000;
-            this.lastTime = time;
-            
-            this.update(deltaTime);
-            this.render();
-        });
-    }
-
-    private update(deltaTime: number): void {
-        // Update camera based on input
-        this.camera.update(this.inputManager, deltaTime);
-        
-        // You can add other update logic here if needed
-        // Example: animate other objects
-        // this.cube.rotation.y += deltaTime;
-    }
-
-    private render(): void {
-        this.renderer.renderScene(this.scene, this.camera);
-    }
-
-    // Public methods for interaction
-    public addRandomCube(): THREE.Mesh {
-        const position = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2
-        );
-        const color = Math.random() * 0xffffff;
-        return this.scene.createCube(0.1, color, position);
-    }
-
-    public addRandomSphere(): THREE.Mesh {
-        const position = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2
-        );
-        const color = Math.random() * 0xffffff;
-        return this.scene.createSphere(0.05, color, position);
-    }
-
-    public clearScene(): void {
-        this.scene.clearScene();
-        this.createWorld();
-    }
-
-    public takeScreenshot(): void {
-        const dataURL = this.renderer.takeScreenshot();
-        const link = document.createElement('a');
-        link.download = 'threejs-screenshot.png';
-        link.href = dataURL;
-        link.click();
-    }
-
-    public getStats(): void {
-        console.log('Scene Stats:', this.scene.getStats());
-        console.log(this.camera.getInfo());
-    }
-
-    // Cleanup method
-    public dispose(): void {
-        this.renderer.dispose();
-        this.inputManager.dispose();
-        this.scene.clearScene();
-    }
+// Try to set color space safely
+try {
+  (renderer as any).outputColorSpace = THREE.SRGBColorSpace;
+} catch (e) {
+  console.log("Color space setting not available in this Three.js version");
 }
 
-// Initialize the application
-const app = new ThreeJSApp();
+document.body.appendChild(renderer.domElement);
+document.body.style.margin = "0";
+document.body.style.overflow = "hidden";
 
-// Make app available globally for debugging
-(window as any).app = app;
+// Create basic objects to test if Three.js is working
+console.log("Creating basic scene...");
 
-// Optional: Add keyboard shortcuts for debugging
-document.addEventListener('keydown', (event) => {
-    switch (event.code) {
-        case 'KeyC':
-            app.addRandomCube();
-            break;
-        case 'KeyS':
-            app.addRandomSphere();
-            break;
-        case 'KeyR':
-            app.clearScene();
-            break;
-        case 'KeyP':
-            app.takeScreenshot();
-            break;
-        case 'KeyI':
-            app.getStats();
-            break;
-        case 'Escape':
-            // Exit pointer lock on Escape key
-            document.exitPointerLock();
-            break;
-    }
+// Ground
+const groundGeometry = new THREE.BoxGeometry(20, 1, 20);
+const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x404040 });
+const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+ground.position.set(0, -0.5, 0);
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Player box
+const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
+const playerMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+const player = new THREE.Mesh(playerGeometry, playerMaterial);
+player.position.set(0, 2, 0);
+player.castShadow = true;
+scene.add(player);
+
+// Test collectible
+const collectibleGeometry = new THREE.SphereGeometry(0.5, 12, 8);
+const collectibleMaterial = new THREE.MeshLambertMaterial({ color: 0xffaa00 });
+const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
+collectible.position.set(3, 2, 0);
+collectible.castShadow = true;
+scene.add(collectible);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+directionalLight.position.set(10, 10, 5);
+directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.height = 2048;
+scene.add(directionalLight);
+
+// Camera position
+camera.position.set(0, 5, 10);
+camera.lookAt(0, 0, 0);
+
+console.log("Scene created, starting render loop...");
+
+// Simple animation loop
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  
+  const time = clock.getElapsedTime();
+  
+  // Simple animations to test
+  player.rotation.y += 0.01;
+  collectible.position.y = 2 + Math.sin(time * 2) * 0.5;
+  collectible.rotation.y += 0.02;
+  
+  renderer.render(scene, camera);
+}
+
+// Start the animation
+animate();
+
+console.log("Animation loop started!");
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-console.log('Controls:');
-console.log('- Click anywhere to enable mouse look (pointer lock)');
-console.log('- WASD to move, Space to go up, Shift to go down');
-console.log('- Hold Shift while moving to sprint');
-console.log('- ESC to exit pointer lock');
-console.log('- C = Add Cube, S = Add Sphere, R = Reset Scene, P = Screenshot, I = Info');
+// Test physics loading
+async function testPhysics() {
+  try {
+    console.log("Testing Rapier physics loading...");
+    
+    // @ts-ignore
+    const RAPIER = await import("@dimforge/rapier3d-compat");
+    await RAPIER.init();
+    
+    const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+    const world = new RAPIER.World(gravity);
+    
+    console.log("✅ Rapier physics loaded successfully!");
+    console.log("World created:", world);
+    
+    // Now you can proceed with full physics integration
+    initFullPhysics(RAPIER, world);
+    
+  } catch (error) {
+    console.error("❌ Failed to load Rapier physics:", error);
+    console.log("Continuing without physics for now...");
+  }
+}
+
+function initFullPhysics(RAPIER: any, world: any) {
+  console.log("Initializing physics for existing objects...");
+  
+  // Create physics bodies for existing objects
+  const groundRigidBodyDesc = RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(0, -0.5, 0);
+  const groundRigidBody = world.createRigidBody(groundRigidBodyDesc);
+  const groundColliderDesc = RAPIER.ColliderDesc.cuboid(10, 0.5, 10);
+  world.createCollider(groundColliderDesc, groundRigidBody);
+  
+  const playerRigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(0, 2, 0);
+  const playerRigidBody = world.createRigidBody(playerRigidBodyDesc);
+  const playerColliderDesc = RAPIER.ColliderDesc.cuboid(0.5, 1, 0.5);
+  world.createCollider(playerColliderDesc, playerRigidBody);
+  
+  // Input handling
+  const keys: { [key: string]: boolean } = {};
+  
+  window.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+  });
+  
+  window.addEventListener('keyup', (e) => {
+    keys[e.code] = false;
+  });
+  
+  // Physics update loop
+  function updatePhysics() {
+    // Handle input
+    if (keys['KeyW'] || keys['ArrowUp']) {
+      playerRigidBody.applyForce({ x: 0, y: 0, z: -50 }, true);
+    }
+    if (keys['KeyS'] || keys['ArrowDown']) {
+      playerRigidBody.applyForce({ x: 0, y: 0, z: 50 }, true);
+    }
+    if (keys['KeyA'] || keys['ArrowLeft']) {
+      playerRigidBody.applyForce({ x: -50, y: 0, z: 0 }, true);
+    }
+    if (keys['KeyD'] || keys['ArrowRight']) {
+      playerRigidBody.applyForce({ x: 50, y: 0, z: 0 }, true);
+    }
+    if (keys['Space']) {
+      playerRigidBody.applyImpulse({ x: 0, y: 15, z: 0 }, true);
+    }
+    
+    // Step physics
+    world.step();
+    
+    // Update mesh positions
+    const playerPos = playerRigidBody.translation();
+    const playerRot = playerRigidBody.rotation();
+    player.position.set(playerPos.x, playerPos.y, playerPos.z);
+    player.quaternion.set(playerRot.x, playerRot.y, playerRot.z, playerRot.w);
+    
+    requestAnimationFrame(updatePhysics);
+  }
+  
+  updatePhysics();
+  console.log("✅ Physics integration complete! Use WASD and Space to control the green box.");
+}
+
+// Test physics after a short delay
+setTimeout(testPhysics, 1000);
