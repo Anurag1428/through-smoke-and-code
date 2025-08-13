@@ -1,165 +1,409 @@
-import * as THREE from 'three';
-import { CustomCamera } from './Camera';
-import { CustomRenderer } from './Renderer';
-import { CustomScene } from './Scene';
-import { InputManager } from './InputManager';
+// main.ts - FPS Game with proper player controller
+import * as THREE from "three";
+import { PlayerController } from "./Player";
 
-class ThreeJSApp {
-    private camera!: CustomCamera;
-    private renderer!: CustomRenderer;
-    private scene!: CustomScene;
-    private inputManager!: InputManager;
-    private cube!: THREE.Mesh;
-    private lastTime: number = 0;
-
-    constructor() {
-        this.init();
+class FPSGame {
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer;
+  private clock: THREE.Clock;
+  
+  // Physics
+  private RAPIER: any;
+  private world: any;
+  private player: PlayerController | null = null;
+  
+  // Game objects
+  private ground: THREE.Mesh[] = [];
+  private obstacles: THREE.Mesh[] = [];
+  private collectibles: THREE.Mesh[] = [];
+  
+  constructor() {
+    this.scene = new THREE.Scene();
+    this.clock = new THREE.Clock();
+    this.setupRenderer();
+    this.setupCamera();
+    this.setupScene();
+  }
+  
+  private setupRenderer() {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    
+    // Enhanced rendering
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    try {
+      (this.renderer as any).outputColorSpace = THREE.SRGBColorSpace;
+    } catch (e) {
+      console.log("Color space setting not available");
     }
-
-    private init(): void {
-        // Initialize core components
-        this.camera = new CustomCamera();
-        this.renderer = new CustomRenderer();
-        this.scene = new CustomScene();
-        this.inputManager = new InputManager();
-
-        // Create the world
-        this.createWorld();
-
-        // Start the animation loop
-        this.startAnimation();
-
-        // Log initial stats
-        console.log('Scene Stats:', this.scene.getStats());
-        console.log(this.camera.getInfo());
+    
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    
+    document.body.appendChild(this.renderer.domElement);
+    document.body.style.margin = "0";
+    document.body.style.overflow = "hidden";
+    document.body.style.backgroundColor = "#000";
+  }
+  
+  private setupCamera() {
+    this.camera = new THREE.PerspectiveCamera(
+      75, 
+      window.innerWidth / window.innerHeight, 
+      0.1, 
+      1000
+    );
+    
+    // Initial camera position (will be controlled by player)
+    this.camera.position.set(0, 5, 10);
+  }
+  
+  private setupScene() {
+    // Add fog for atmosphere
+    this.scene.fog = new THREE.Fog(0x202020, 10, 100);
+    
+    // Lighting setup
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+    this.scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(20, 20, 10);
+    directionalLight.castShadow = true;
+    
+    // Enhanced shadow settings
+    directionalLight.shadow.mapSize.width = 4096;
+    directionalLight.shadow.mapSize.height = 4096;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 100;
+    directionalLight.shadow.camera.left = -50;
+    directionalLight.shadow.camera.right = 50;
+    directionalLight.shadow.camera.top = 50;
+    directionalLight.shadow.camera.bottom = -50;
+    directionalLight.shadow.bias = -0.0005;
+    
+    this.scene.add(directionalLight);
+    
+    // Additional fill lighting
+    const fillLight = new THREE.DirectionalLight(0x4444ff, 0.2);
+    fillLight.position.set(-10, 10, -10);
+    this.scene.add(fillLight);
+    
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  }
+  
+  async init() {
+    try {
+      console.log("Initializing FPS Game...");
+      
+      // Load and initialize Rapier physics
+      this.RAPIER = await import("@dimforge/rapier3d-compat");
+      await this.RAPIER.init();
+      
+      const gravity = { x: 0.0, y: -9.81, z: 0.0 };
+      this.world = new this.RAPIER.World(gravity);
+      
+      console.log("✅ Physics initialized");
+      
+      // Create game world
+      this.createGround();
+      this.createObstacles();
+      this.createCollectibles();
+      
+      // Create player (this is the main focus)
+      this.createPlayer();
+      
+      // Setup UI
+      this.setupUI();
+      
+      console.log("✅ Game initialized successfully!");
+      
+      // Start game loop
+      this.gameLoop();
+      
+    } catch (error) {
+      console.error("❌ Failed to initialize game:", error);
     }
-
-    private createWorld(): void {
-        // Create ground
-        this.scene.createGround(100);
-        
-        // Create the original cube with MeshNormalMaterial for the rainbow effect
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshNormalMaterial();
-        this.cube = new THREE.Mesh(geometry, material);
-        this.cube.position.set(0, 1, 0);
-        this.cube.castShadow = true;
-        this.cube.receiveShadow = true;
-        this.scene.addMesh(this.cube);
-
-        // Populate with random objects
-        this.scene.populateWithRandomObjects(30);
-        
-        // Add some large landmark objects
-        this.scene.createCube(3, 0x8b4513, new THREE.Vector3(10, 1.5, 10)); // Brown cube
-        this.scene.createSphere(2, 0x4169e1, new THREE.Vector3(-10, 2, -10)); // Blue sphere
-        this.scene.createCube(2, 0xff1493, new THREE.Vector3(15, 1, -15)); // Pink cube
+  }
+  
+  private createGround() {
+    console.log("Creating ground...");
+    
+    // Main ground platform
+    const mainGroundGeometry = new THREE.BoxGeometry(50, 1, 50);
+    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4a5d4a });
+    
+    const mainGround = new THREE.Mesh(mainGroundGeometry, groundMaterial);
+    mainGround.position.set(0, -0.5, 0);
+    mainGround.receiveShadow = true;
+    this.scene.add(mainGround);
+    this.ground.push(mainGround);
+    
+    // Create physics body for ground
+    const groundBodyDesc = this.RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(0, -0.5, 0);
+    const groundBody = this.world.createRigidBody(groundBodyDesc);
+    const groundColliderDesc = this.RAPIER.ColliderDesc.cuboid(25, 0.5, 25)
+      .setFriction(0.8)
+      .setRestitution(0.0);
+    this.world.createCollider(groundColliderDesc, groundBody);
+    
+    // Create additional platforms
+    const platforms = [
+      { pos: [15, 2, -10], size: [8, 1, 8] },
+      { pos: [-15, 4, 10], size: [6, 1, 6] },
+      { pos: [0, 6, -20], size: [4, 1, 4] },
+      { pos: [20, 3, 20], size: [5, 1, 10] },
+    ];
+    
+    platforms.forEach((platformData, index) => {
+      const platformGeometry = new THREE.BoxGeometry(...platformData.size as [number, number, number]);
+      const platform = new THREE.Mesh(platformGeometry, groundMaterial);
+      platform.position.set(...platformData.pos as [number, number, number]);
+      platform.receiveShadow = true;
+      this.scene.add(platform);
+      this.ground.push(platform);
+      
+      // Physics body
+      const bodyDesc = this.RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(...platformData.pos as [number, number, number]);
+      const body = this.world.createRigidBody(bodyDesc);
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
+        platformData.size[0] / 2,
+        platformData.size[1] / 2,
+        platformData.size[2] / 2
+      ).setFriction(0.8);
+      this.world.createCollider(colliderDesc, body);
+    });
+  }
+  
+  private createObstacles() {
+    console.log("Creating obstacles...");
+    
+    const obstaclePositions = [
+      [8, 1, 5], [-8, 1, -5], [12, 1, -15], [-12, 5, 10],
+      [3, 1, 8], [-5, 1, -8], [18, 4, 20], [-18, 7, 15]
+    ];
+    
+    const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
+    
+    obstaclePositions.forEach((pos, index) => {
+      const height = 2 + Math.random() * 3;
+      const width = 0.8 + Math.random() * 1.2;
+      
+      const obstacleGeometry = new THREE.BoxGeometry(width, height, width);
+      const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+      obstacle.position.set(pos[0], pos[1] + height/2, pos[2]);
+      obstacle.castShadow = true;
+      obstacle.receiveShadow = true;
+      this.scene.add(obstacle);
+      this.obstacles.push(obstacle);
+      
+      // Physics body (static obstacles)
+      const bodyDesc = this.RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(pos[0], pos[1] + height/2, pos[2]);
+      const body = this.world.createRigidBody(bodyDesc);
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(width/2, height/2, width/2)
+        .setFriction(0.6);
+      this.world.createCollider(colliderDesc, body);
+    });
+  }
+  
+  private createCollectibles() {
+    console.log("Creating collectibles...");
+    
+    const collectiblePositions = [
+      [5, 2, 3], [-5, 2, -3], [10, 2, -8], [-10, 6, 12],
+      [0, 8, -20], [20, 5, 20], [-15, 8, 15], [12, 2, -12]
+    ];
+    
+    const collectibleMaterial = new THREE.MeshLambertMaterial({ 
+      color: 0xffaa00,
+      emissive: 0x221100
+    });
+    
+    collectiblePositions.forEach(pos => {
+      const collectibleGeometry = new THREE.SphereGeometry(0.3, 12, 8);
+      const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
+      collectible.position.set(pos[0], pos[1], pos[2]);
+      collectible.castShadow = true;
+      this.scene.add(collectible);
+      this.collectibles.push(collectible);
+    });
+  }
+  
+  private createPlayer() {
+    console.log("Creating player with capsule physics...");
+    
+    // Create player with capsule collider
+    this.player = new PlayerController(this.world, this.scene, {
+      height: 1.8,    // 1.8m tall
+      radius: 0.4,    // 0.4m radius
+      mass: 70,       // 70kg
+      position: new THREE.Vector3(0, 5, 0)
+    });
+    
+    // Attach camera to player for FPS view
+    this.player.attachCamera(this.camera);
+    
+    console.log("✅ Player created with capsule physics!");
+  }
+  
+  private setupUI() {
+    // Crosshair
+    const crosshair = document.createElement('div');
+    crosshair.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 4px;
+      height: 4px;
+      background: white;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      z-index: 1000;
+      pointer-events: none;
+      box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    `;
+    document.body.appendChild(crosshair);
+    
+    // Instructions
+    const instructions = document.createElement('div');
+    instructions.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-family: monospace;
+      font-size: 14px;
+      z-index: 1000;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 5px;
+    `;
+    instructions.innerHTML = `
+      <strong>FPS Controls:</strong><br>
+      • WASD - Move<br>
+      • Mouse - Look around<br>
+      • Space - Jump<br>
+      • Click to lock cursor<br>
+      • ESC to unlock cursor
+    `;
+    document.body.appendChild(instructions);
+    
+    // Player info
+    const playerInfo = document.createElement('div');
+    playerInfo.id = 'playerInfo';
+    playerInfo.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      color: white;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 1000;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 5px;
+    `;
+    document.body.appendChild(playerInfo);
+    
+    // ESC to exit pointer lock
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape') {
+        document.exitPointerLock?.();
+      }
+    });
+  }
+  
+  private updateUI() {
+    if (!this.player) return;
+    
+    const playerInfo = document.getElementById('playerInfo');
+    if (playerInfo) {
+      const pos = this.player.getPosition();
+      const vel = this.player.getVelocity();
+      const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+      
+      playerInfo.innerHTML = `
+        Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}<br>
+        Speed: ${speed.toFixed(1)} m/s<br>
+        Grounded: ${this.player.isPlayerGrounded() ? 'Yes' : 'No'}<br>
+        FPS: ${(1 / this.clock.getDelta()).toFixed(0)}
+      `;
     }
-
-    private startAnimation(): void {
-        this.renderer.startAnimationLoop((time: number) => {
-            const deltaTime = this.lastTime === 0 ? 0 : (time - this.lastTime) / 1000;
-            this.lastTime = time;
-            
-            this.update(deltaTime);
-            this.render();
-        });
+  }
+  
+  private animateCollectibles() {
+    const time = this.clock.getElapsedTime();
+    
+    this.collectibles.forEach((collectible, index) => {
+      const offset = index * 0.5;
+      collectible.position.y += Math.sin(time * 3 + offset) * 0.005;
+      collectible.rotation.y += 0.02;
+      
+      // Glow effect
+      const intensity = 0.5 + Math.sin(time * 4 + offset) * 0.3;
+      (collectible.material as THREE.MeshLambertMaterial).emissive.setScalar(intensity * 0.1);
+    });
+  }
+  
+  private gameLoop() {
+    requestAnimationFrame(() => this.gameLoop());
+    
+    const deltaTime = this.clock.getDelta();
+    
+    // Update physics world
+    this.world.step();
+    
+    // Update player
+    if (this.player) {
+      this.player.update(deltaTime);
     }
-
-    private update(deltaTime: number): void {
-        // Update camera based on input
-        this.camera.update(this.inputManager, deltaTime);
-        
-        // You can add other update logic here if needed
-        // Example: animate other objects
-        // this.cube.rotation.y += deltaTime;
+    
+    // Animate game objects
+    this.animateCollectibles();
+    
+    // Update UI
+    this.updateUI();
+    
+    // Render scene
+    this.renderer.render(this.scene, this.camera);
+  }
+  
+  dispose() {
+    console.log("Disposing game...");
+    
+    if (this.player) {
+      this.player.dispose();
     }
-
-    private render(): void {
-        this.renderer.renderScene(this.scene, this.camera);
+    
+    if (this.world) {
+      this.world.free();
     }
-
-    // Public methods for interaction
-    public addRandomCube(): THREE.Mesh {
-        const position = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2
-        );
-        const color = Math.random() * 0xffffff;
-        return this.scene.createCube(0.1, color, position);
-    }
-
-    public addRandomSphere(): THREE.Mesh {
-        const position = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2
-        );
-        const color = Math.random() * 0xffffff;
-        return this.scene.createSphere(0.05, color, position);
-    }
-
-    public clearScene(): void {
-        this.scene.clearScene();
-        this.createWorld();
-    }
-
-    public takeScreenshot(): void {
-        const dataURL = this.renderer.takeScreenshot();
-        const link = document.createElement('a');
-        link.download = 'threejs-screenshot.png';
-        link.href = dataURL;
-        link.click();
-    }
-
-    public getStats(): void {
-        console.log('Scene Stats:', this.scene.getStats());
-        console.log(this.camera.getInfo());
-    }
-
-    // Cleanup method
-    public dispose(): void {
-        this.renderer.dispose();
-        this.inputManager.dispose();
-        this.scene.clearScene();
-    }
+    
+    this.renderer.dispose();
+  }
 }
 
-// Initialize the application
-const app = new ThreeJSApp();
+// Initialize game
+const game = new FPSGame();
+game.init().catch(console.error);
 
-// Make app available globally for debugging
-(window as any).app = app;
-
-// Optional: Add keyboard shortcuts for debugging
-document.addEventListener('keydown', (event) => {
-    switch (event.code) {
-        case 'KeyC':
-            app.addRandomCube();
-            break;
-        case 'KeyS':
-            app.addRandomSphere();
-            break;
-        case 'KeyR':
-            app.clearScene();
-            break;
-        case 'KeyP':
-            app.takeScreenshot();
-            break;
-        case 'KeyI':
-            app.getStats();
-            break;
-        case 'Escape':
-            // Exit pointer lock on Escape key
-            document.exitPointerLock();
-            break;
-    }
+// Handle page unload
+window.addEventListener('beforeunload', () => {
+  game.dispose();
 });
 
-console.log('Controls:');
-console.log('- Click anywhere to enable mouse look (pointer lock)');
-console.log('- WASD to move, Space to go up, Shift to go down');
-console.log('- Hold Shift while moving to sprint');
-console.log('- ESC to exit pointer lock');
-console.log('- C = Add Cube, S = Add Sphere, R = Reset Scene, P = Screenshot, I = Info');
+// Expose game for debugging
+(window as any).game = game;
