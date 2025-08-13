@@ -156,18 +156,27 @@ class FPSGame {
       .setRestitution(0.0);
     this.world.createCollider(groundColliderDesc, groundBody);
     
-    // Create additional platforms
+    // Create additional platforms for testing collision
     const platforms = [
       { pos: [15, 2, -10], size: [8, 1, 8] },
       { pos: [-15, 4, 10], size: [6, 1, 6] },
       { pos: [0, 6, -20], size: [4, 1, 4] },
       { pos: [20, 3, 20], size: [5, 1, 10] },
+      // Add some ramps for testing
+      { pos: [10, 1, 0], size: [3, 0.2, 6], rotation: [0, 0, 0.3] },
+      { pos: [-10, 1, 0], size: [3, 0.2, 6], rotation: [0, 0, -0.3] },
     ];
     
     platforms.forEach((platformData, index) => {
       const platformGeometry = new THREE.BoxGeometry(...platformData.size as [number, number, number]);
       const platform = new THREE.Mesh(platformGeometry, groundMaterial);
       platform.position.set(...platformData.pos as [number, number, number]);
+      
+      // Apply rotation if specified
+      if (platformData.rotation) {
+        platform.rotation.set(...platformData.rotation as [number, number, number]);
+      }
+      
       platform.receiveShadow = true;
       this.scene.add(platform);
       this.ground.push(platform);
@@ -175,6 +184,18 @@ class FPSGame {
       // Physics body
       const bodyDesc = this.RAPIER.RigidBodyDesc.fixed()
         .setTranslation(...platformData.pos as [number, number, number]);
+      
+      if (platformData.rotation) {
+        const euler = new THREE.Euler(...platformData.rotation as [number, number, number]);
+        const quaternion = new THREE.Quaternion().setFromEuler(euler);
+        bodyDesc.setRotation({
+          x: quaternion.x,
+          y: quaternion.y,
+          z: quaternion.z,
+          w: quaternion.w
+        });
+      }
+      
       const body = this.world.createRigidBody(bodyDesc);
       const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
         platformData.size[0] / 2,
@@ -190,7 +211,10 @@ class FPSGame {
     
     const obstaclePositions = [
       [8, 1, 5], [-8, 1, -5], [12, 1, -15], [-12, 5, 10],
-      [3, 1, 8], [-5, 1, -8], [18, 4, 20], [-18, 7, 15]
+      [3, 1, 8], [-5, 1, -8], [18, 4, 20], [-18, 7, 15],
+      // Add more obstacles for better collision testing
+      [2, 1, 2], [-2, 1, -2], [6, 1, -6], [-6, 1, 6],
+      [0, 1, 10], [0, 1, -10], [15, 1, 0], [-15, 1, 0]
     ];
     
     const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
@@ -215,6 +239,34 @@ class FPSGame {
         .setFriction(0.6);
       this.world.createCollider(colliderDesc, body);
     });
+    
+    // Add some dynamic physics objects for testing
+    for (let i = 0; i < 5; i++) {
+      const x = (Math.random() - 0.5) * 20;
+      const z = (Math.random() - 0.5) * 20;
+      const y = 5 + i * 2;
+      
+      const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const boxMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b6b });
+      const box = new THREE.Mesh(boxGeometry, boxMaterial);
+      box.position.set(x, y, z);
+      box.castShadow = true;
+      box.receiveShadow = true;
+      this.scene.add(box);
+      
+      // Dynamic physics body
+      const bodyDesc = this.RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(x, y, z);
+      const body = this.world.createRigidBody(bodyDesc);
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5)
+        .setFriction(0.7)
+        .setRestitution(0.3);
+      this.world.createCollider(colliderDesc, body);
+      
+      // Store reference to sync with Three.js mesh
+      (box as any).physicsBody = body;
+      this.obstacles.push(box);
+    }
   }
   
   private createCollectibles() {
@@ -222,7 +274,9 @@ class FPSGame {
     
     const collectiblePositions = [
       [5, 2, 3], [-5, 2, -3], [10, 2, -8], [-10, 6, 12],
-      [0, 8, -20], [20, 5, 20], [-15, 8, 15], [12, 2, -12]
+      [0, 8, -20], [20, 5, 20], [-15, 8, 15], [12, 2, -12],
+      // Add more collectibles
+      [3, 3, 0], [-3, 3, 0], [0, 3, 5], [0, 3, -5]
     ];
     
     const collectibleMaterial = new THREE.MeshLambertMaterial({ 
@@ -339,7 +393,7 @@ class FPSGame {
         Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}<br>
         Speed: ${speed.toFixed(1)} m/s<br>
         Grounded: ${this.player.isPlayerGrounded() ? 'Yes' : 'No'}<br>
-        FPS: ${(1 / this.clock.getDelta()).toFixed(0)}
+        FPS: ${Math.round(1 / this.clock.getDelta())}
       `;
     }
   }
@@ -358,10 +412,24 @@ class FPSGame {
     });
   }
   
+  private updateDynamicObjects() {
+    // Update dynamic physics objects to sync with their physics bodies
+    this.obstacles.forEach(obstacle => {
+      const physicsBody = (obstacle as any).physicsBody;
+      if (physicsBody) {
+        const position = physicsBody.translation();
+        const rotation = physicsBody.rotation();
+        
+        obstacle.position.set(position.x, position.y, position.z);
+        obstacle.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+      }
+    });
+  }
+  
   private gameLoop() {
     requestAnimationFrame(() => this.gameLoop());
     
-    const deltaTime = this.clock.getDelta();
+    const deltaTime = Math.min(this.clock.getDelta(), 0.016); // Cap at 60fps
     
     // Update physics world
     this.world.step();
@@ -370,6 +438,9 @@ class FPSGame {
     if (this.player) {
       this.player.update(deltaTime);
     }
+    
+    // Update dynamic objects
+    this.updateDynamicObjects();
     
     // Animate game objects
     this.animateCollectibles();
