@@ -1,4 +1,4 @@
-// src/PlayerController.ts - FIXED FPS Controller with Correct Movement
+// src/PlayerController.ts - FIXED FPS Controller with Correct Movement AND JUMPING
 import * as THREE from "three";
 // @ts-ignore
 import * as RAPIER from "@dimforge/rapier3d-compat";
@@ -19,12 +19,12 @@ export class PlayerController {
   private runSpeed = 8.0;
   private walkSpeed = 3.0;
   private jumpForce = 10.0;
-  private maxSpeed = 15.0;
 
   // Input state with debugging
   private keys: { [key: string]: boolean } = {};
   private isGrounded = false;
-  private groundCheckDistance = 0.1;
+  private groundCheckDistance = 0.2; // INCREASED for better detection
+  private lastGroundTime = 0; // ADDED for jump buffering
 
   // Camera system - SIMPLIFIED
   private camera: THREE.PerspectiveCamera | null = null;
@@ -39,8 +39,10 @@ export class PlayerController {
   private frameCount = 0;
   private lastDebugTime = 0;
 
-  // Jump timing
+  // Jump timing - ENHANCED
   private jumpCooldown = 0;
+  private jumpBufferTime = 0.1; // Allow jumping shortly after leaving ground
+  private jumpPressed = false; // Track spacebar press state
 
   constructor(
     world: RAPIER.World,
@@ -62,8 +64,8 @@ export class PlayerController {
     this.createPhysicsBody();
     this.setupInput();
 
-    console.log("🚀 FIXED FPS Controller initialized");
-    this.debugLog("Controller created with FIXED movement controls");
+    console.log("🚀 FIXED FPS Controller initialized with WORKING JUMP");
+    this.debugLog("Controller created with FIXED movement controls and jumping");
   }
 
   private debugLog(message: string, data?: any) {
@@ -124,6 +126,17 @@ export class PlayerController {
     this.debugLog("Setting up FIXED input handlers...");
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Special handling for spacebar - IMPROVED
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (!this.jumpPressed) {
+          this.jumpPressed = true;
+          this.debugLog(`SPACEBAR PRESSED - Jump attempt initiated`);
+        }
+        this.keys[e.code] = true;
+        return;
+      }
+
       if (!this.keys[e.code]) {
         this.debugLog(`KEY DOWN: ${e.code}`);
       }
@@ -133,7 +146,7 @@ export class PlayerController {
       const movementKeys = [
         'KeyW', 'KeyA', 'KeyS', 'KeyD', 
         'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-        'Space', 'ShiftLeft', 'ShiftRight'
+        'ShiftLeft', 'ShiftRight'
       ];
       if (movementKeys.includes(e.code)) {
         e.preventDefault();
@@ -147,6 +160,15 @@ export class PlayerController {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      // Special handling for spacebar - IMPROVED
+      if (e.code === 'Space') {
+        e.preventDefault();
+        this.jumpPressed = false;
+        this.keys[e.code] = false;
+        this.debugLog(`SPACEBAR RELEASED`);
+        return;
+      }
+
       if (this.keys[e.code]) {
         this.debugLog(`KEY UP: ${e.code}`);
       }
@@ -208,7 +230,7 @@ export class PlayerController {
     this.frameCount++;
     this.jumpCooldown = Math.max(0, this.jumpCooldown - deltaTime);
     
-    this.checkGrounded();
+    this.checkGrounded(deltaTime); // PASS deltaTime for better ground tracking
     this.handleMovement(deltaTime);
     this.updateCameraPosition();
     this.syncMeshWithBody();
@@ -230,35 +252,66 @@ export class PlayerController {
       speed: speed.toFixed(2),
       velocity: `${vel.x.toFixed(2)}, ${vel.y.toFixed(2)}, ${vel.z.toFixed(2)}`,
       grounded: this.isGrounded,
+      timeSinceGrounded: ((performance.now() - this.lastGroundTime) / 1000).toFixed(2),
       activeKeys: activeKeys,
       yaw: `${(this.yaw * 180/Math.PI).toFixed(1)}°`,
       pitch: `${(this.pitch * 180/Math.PI).toFixed(1)}°`
     });
   }
 
-  private checkGrounded() {
+  // COMPLETELY REWRITTEN GROUND CHECK - More reliable
+  private checkGrounded(_deltaTime: number) {
     const position = this.body.translation();
-    const rayOrigin = { 
-      x: position.x, 
-      y: position.y - (this.height / 2) + this.radius, 
-      z: position.z 
-    };
+    const velocity = this.body.linvel();
+    
+    // Multiple raycast points for better detection
+    const rayOriginY = position.y - (this.height / 2) + this.radius + 0.01;
+    const rayPoints = [
+      { x: position.x, y: rayOriginY, z: position.z }, // Center
+      { x: position.x + this.radius * 0.7, y: rayOriginY, z: position.z }, // Right
+      { x: position.x - this.radius * 0.7, y: rayOriginY, z: position.z }, // Left
+      { x: position.x, y: rayOriginY, z: position.z + this.radius * 0.7 }, // Forward
+      { x: position.x, y: rayOriginY, z: position.z - this.radius * 0.7 }  // Back
+    ];
+    
     const rayDirection = { x: 0, y: -1, z: 0 };
-    const maxDistance = this.groundCheckDistance + 0.05;
-
-    const ray = new RAPIER.Ray(rayOrigin, rayDirection);
-    const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, this.body);
-
+    const maxDistance = this.groundCheckDistance;
+    
+    let foundGround = false;
+    
+    for (const rayOrigin of rayPoints) {
+      const ray = new RAPIER.Ray(rayOrigin, rayDirection);
+      const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, this.body);
+      
+      if (hit !== null) {
+        foundGround = true;
+        break;
+      }
+    }
+    
+    // Additional check: if moving downward very slowly, consider grounded
+    if (!foundGround && Math.abs(velocity.y) < 0.1) {
+      // Try a slightly longer raycast
+      const ray = new RAPIER.Ray({ x: position.x, y: rayOriginY, z: position.z }, rayDirection);
+      const hit = this.world.castRay(ray, this.groundCheckDistance + 0.1, true, undefined, undefined, this.body);
+      foundGround = hit !== null;
+    }
+    
     const wasGrounded = this.isGrounded;
-    this.isGrounded = hit !== null;
-
+    this.isGrounded = foundGround;
+    
+    // Track when we were last grounded for jump buffering
+    if (this.isGrounded) {
+      this.lastGroundTime = performance.now();
+    }
+    
     // Debug ground state changes
     if (wasGrounded !== this.isGrounded) {
-      this.debugLog(`Ground state changed: ${wasGrounded} -> ${this.isGrounded}`);
+      this.debugLog(`🚶 Ground state changed: ${wasGrounded} -> ${this.isGrounded} (Y velocity: ${velocity.y.toFixed(2)})`);
     }
   }
 
-  private handleMovement(deltaTime: number) {
+  private handleMovement(_deltaTime: number) {
     // COMPLETELY FIXED MOVEMENT SYSTEM
     const currentVel = this.body.linvel();
     
@@ -336,16 +389,8 @@ export class PlayerController {
       }, true);
     }
 
-    // Jumping
-    if (this.keys['Space'] && this.isGrounded && this.jumpCooldown <= 0) {
-      this.body.setLinvel({
-        x: currentVel.x,
-        y: this.jumpForce,
-        z: currentVel.z
-      }, true);
-      this.jumpCooldown = 0.2;
-      this.debugLog(`JUMP! Applied Y velocity: ${this.jumpForce}`);
-    }
+    // COMPLETELY REWRITTEN JUMPING SYSTEM - Much more reliable
+    this.handleJumping();
 
     // Terminal velocity
     if (currentVel.y < -20) {
@@ -354,6 +399,53 @@ export class PlayerController {
         y: -20,
         z: currentVel.z
       }, true);
+    }
+  }
+
+  // NEW SEPARATE JUMP HANDLING METHOD - More robust
+  private handleJumping() {
+    const currentVel = this.body.linvel();
+    const timeSinceGrounded = (performance.now() - this.lastGroundTime) / 1000;
+    
+    // Can jump if:
+    // 1. Currently grounded, OR
+    // 2. Was grounded very recently (coyote time), AND
+    // 3. Not in jump cooldown, AND
+    // 4. Jump is pressed, AND
+    // 5. Not moving upward too fast already
+    const canJump = (this.isGrounded || timeSinceGrounded < this.jumpBufferTime) &&
+                   this.jumpCooldown <= 0 &&
+                   this.jumpPressed &&
+                   currentVel.y <= 2.0; // Allow jumping even with small upward velocity
+    
+    if (canJump) {
+      // EXECUTE JUMP
+      this.body.setLinvel({
+        x: currentVel.x,
+        y: this.jumpForce,
+        z: currentVel.z
+      }, true);
+      
+      this.jumpCooldown = 0.15; // Prevent double jumping
+      this.jumpPressed = false; // Consume the jump input
+      
+      this.debugLog(`🚀 JUMP EXECUTED! Y velocity: ${this.jumpForce}, was grounded: ${this.isGrounded}, time since grounded: ${timeSinceGrounded.toFixed(3)}s`);
+    } 
+    // Debug why jump failed
+    else if (this.jumpPressed) {
+      if (this.frameCount % 15 === 0) { // More frequent debug for jump issues
+        let reason = "Jump failed: ";
+        if (!this.isGrounded && timeSinceGrounded >= this.jumpBufferTime) {
+          reason += `Not grounded (${timeSinceGrounded.toFixed(3)}s ago)`;
+        } else if (this.jumpCooldown > 0) {
+          reason += `Cooldown (${this.jumpCooldown.toFixed(3)}s)`;
+        } else if (currentVel.y > 2.0) {
+          reason += `Already moving up (${currentVel.y.toFixed(2)})`;
+        } else {
+          reason += "Unknown";
+        }
+        this.debugLog(`❌ ${reason}`);
+      }
     }
   }
 
@@ -450,11 +542,15 @@ export class PlayerController {
   getDebugInfo(): any {
     const vel = this.body.linvel();
     const pos = this.body.translation();
+    const timeSinceGrounded = (performance.now() - this.lastGroundTime) / 1000;
     return {
       position: { x: pos.x.toFixed(2), y: pos.y.toFixed(2), z: pos.z.toFixed(2) },
       velocity: { x: vel.x.toFixed(2), y: vel.y.toFixed(2), z: vel.z.toFixed(2) },
       speed: Math.sqrt(vel.x * vel.x + vel.z * vel.z).toFixed(2),
       grounded: this.isGrounded,
+      timeSinceGrounded: timeSinceGrounded.toFixed(3),
+      jumpPressed: this.jumpPressed,
+      jumpCooldown: this.jumpCooldown.toFixed(3),
       yaw: (this.yaw * 180/Math.PI).toFixed(1),
       pitch: (this.pitch * 180/Math.PI).toFixed(1),
       activeKeys: Object.keys(this.keys).filter(key => this.keys[key])
@@ -466,6 +562,8 @@ export class PlayerController {
     this.setPosition(resetPos);
     this.keys = {};
     this.jumpCooldown = 0;
+    this.jumpPressed = false;
+    this.lastGroundTime = performance.now();
     this.yaw = 0;
     this.pitch = 0;
     if (this.camera) {

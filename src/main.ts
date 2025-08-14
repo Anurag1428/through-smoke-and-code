@@ -1,4 +1,4 @@
-// main.ts - FPS Game with proper player controller
+// main.ts - FIXED FPS Game with proper physics timing
 import * as THREE from "three";
 import { PlayerController } from "./Player";
 
@@ -17,6 +17,9 @@ class FPSGame {
   private ground: THREE.Mesh[] = [];
   private obstacles: THREE.Mesh[] = [];
   private collectibles: THREE.Mesh[] = [];
+
+  // FIXED: Add proper time tracking
+  private lastTime: number = 0;
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -126,6 +129,9 @@ class FPSGame {
       this.setupUI();
 
       console.log("✅ Game initialized successfully!");
+
+      // FIXED: Initialize time tracking
+      this.lastTime = performance.now();
 
       // Start game loop
       this.gameLoop();
@@ -404,9 +410,12 @@ class FPSGame {
         Vel: ${debug.velocity.x}, ${debug.velocity.y}, ${debug.velocity.z}<br>
         Speed: ${debug.speed} u/s<br>
         Grounded: ${debug.grounded ? "✅" : "❌"}<br>
+        Jump Ready: ${debug.jumpCooldown === "0.000" ? "✅" : "❌"}<br>
+        Time Since Ground: ${debug.timeSinceGrounded}s<br>
+        Jump Pressed: ${debug.jumpPressed ? "✅" : "❌"}<br>
         Yaw: ${debug.yaw}° Pitch: ${debug.pitch}°<br>
         Keys: ${debug.activeKeys.join(', ') || 'None'}<br>
-        FPS: ${Math.round(1 / this.clock.getDelta())}
+        Delta: ${this.clock.getDelta().toFixed(4)}s
       `;
     }
   }
@@ -441,15 +450,19 @@ class FPSGame {
     });
   }
 
+  // FIXED: Much better game loop with proper timing
   private gameLoop() {
     requestAnimationFrame(() => this.gameLoop());
 
-    const deltaTime = Math.min(this.clock.getDelta(), 0.016); // Cap at 60fps
+    // FIXED: Proper delta time calculation
+    const currentTime = performance.now();
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.02); // Cap at 50fps minimum
+    this.lastTime = currentTime;
 
-    // Update physics world
+    // CRITICAL: Step physics world BEFORE updating player
     this.world.step();
 
-    // Update player
+    // Update player with proper deltaTime
     if (this.player) {
       this.player.update(deltaTime);
     }
