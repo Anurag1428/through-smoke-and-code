@@ -1,11 +1,11 @@
-// main.ts - FPS Game with proper player controller
+// main.ts - FIXED FPS Game with proper physics timing
 import * as THREE from "three";
 import { PlayerController } from "./Player";
 
 class FPSGame {
   private scene: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera; // Added definite assignment assertion
-  private renderer!: THREE.WebGLRenderer; // Added definite assignment assertion
+  private camera!: THREE.PerspectiveCamera;
+  private renderer!: THREE.WebGLRenderer;
   private clock: THREE.Clock;
 
   // Physics
@@ -17,6 +17,9 @@ class FPSGame {
   private ground: THREE.Mesh[] = [];
   private obstacles: THREE.Mesh[] = [];
   private collectibles: THREE.Mesh[] = [];
+
+  // FIXED: Add proper time tracking
+  private lastTime: number = 0;
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -105,7 +108,7 @@ class FPSGame {
       console.log("Initializing FPS Game...");
 
       // Load and initialize Rapier physics
-      // @ts-ignore Could not find a declaration file for module '@dimforge/rapier3d-compat'
+      // @ts-ignore
       this.RAPIER = await import("@dimforge/rapier3d-compat");
       await this.RAPIER.init();
 
@@ -126,6 +129,9 @@ class FPSGame {
       this.setupUI();
 
       console.log("✅ Game initialized successfully!");
+
+      // FIXED: Initialize time tracking
+      this.lastTime = performance.now();
 
       // Start game loop
       this.gameLoop();
@@ -148,11 +154,7 @@ class FPSGame {
     this.ground.push(mainGround);
 
     // Create physics body for ground
-    const groundBodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(
-      0,
-      -0.5,
-      0
-    );
+    const groundBodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0);
     const groundBody = this.world.createRigidBody(groundBodyDesc);
     const groundColliderDesc = this.RAPIER.ColliderDesc.cuboid(25, 0.5, 25)
       .setFriction(0.8)
@@ -171,20 +173,15 @@ class FPSGame {
     ];
 
     platforms.forEach((platformData) => {
-      // Removed unused 'index' parameter
       const platformGeometry = new THREE.BoxGeometry(
         ...platformData.size as [number, number, number]
       );
       const platform = new THREE.Mesh(platformGeometry, groundMaterial);
-      platform.position.set(
-        ...platformData.pos as [number, number, number]
-      );
+      platform.position.set(...platformData.pos as [number, number, number]);
 
       // Apply rotation if specified
       if (platformData.rotation) {
-        platform.rotation.set(
-          ...platformData.rotation as [number, number, number]
-        );
+        platform.rotation.set(...platformData.rotation as [number, number, number]);
       }
 
       platform.receiveShadow = true;
@@ -197,9 +194,7 @@ class FPSGame {
       );
 
       if (platformData.rotation) {
-        const euler = new THREE.Euler(
-          ...platformData.rotation as [number, number, number]
-        );
+        const euler = new THREE.Euler(...platformData.rotation as [number, number, number]);
         const quaternion = new THREE.Quaternion().setFromEuler(euler);
         bodyDesc.setRotation({
           x: quaternion.x,
@@ -223,29 +218,15 @@ class FPSGame {
     console.log("Creating obstacles...");
 
     const obstaclePositions = [
-      [8, 1, 5],
-      [-8, 1, -5],
-      [12, 1, -15],
-      [-12, 5, 10],
-      [3, 1, 8],
-      [-5, 1, -8],
-      [18, 4, 20],
-      [-18, 7, 15],
-      // Add more obstacles for better collision testing
-      [2, 1, 2],
-      [-2, 1, -2],
-      [6, 1, -6],
-      [-6, 1, 6],
-      [0, 1, 10],
-      [0, 1, -10],
-      [15, 1, 0],
-      [-15, 1, 0],
+      [8, 1, 5], [-8, 1, -5], [12, 1, -15], [-12, 5, 10],
+      [3, 1, 8], [-5, 1, -8], [18, 4, 20], [-18, 7, 15],
+      [2, 1, 2], [-2, 1, -2], [6, 1, -6], [-6, 1, 6],
+      [0, 1, 10], [0, 1, -10], [15, 1, 0], [-15, 1, 0],
     ];
 
     const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
 
     obstaclePositions.forEach((pos) => {
-      // Removed unused 'index' parameter
       const height = 2 + Math.random() * 3;
       const width = 0.8 + Math.random() * 1.2;
 
@@ -259,15 +240,11 @@ class FPSGame {
 
       // Physics body (static obstacles)
       const bodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(
-        pos[0],
-        pos[1] + height / 2,
-        pos[2]
+        pos[0], pos[1] + height / 2, pos[2]
       );
       const body = this.world.createRigidBody(bodyDesc);
       const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
-        width / 2,
-        height / 2,
-        width / 2
+        width / 2, height / 2, width / 2
       ).setFriction(0.6);
       this.world.createCollider(colliderDesc, body);
     });
@@ -287,11 +264,7 @@ class FPSGame {
       this.scene.add(box);
 
       // Dynamic physics body
-      const bodyDesc = this.RAPIER.RigidBodyDesc.dynamic().setTranslation(
-        x,
-        y,
-        z
-      );
+      const bodyDesc = this.RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z);
       const body = this.world.createRigidBody(bodyDesc);
       const colliderDesc = this.RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5)
         .setFriction(0.7)
@@ -308,19 +281,9 @@ class FPSGame {
     console.log("Creating collectibles...");
 
     const collectiblePositions = [
-      [5, 2, 3],
-      [-5, 2, -3],
-      [10, 2, -8],
-      [-10, 6, 12],
-      [0, 8, -20],
-      [20, 5, 20],
-      [-15, 8, 15],
-      [12, 2, -12],
-      // Add more collectibles
-      [3, 3, 0],
-      [-3, 3, 0],
-      [0, 3, 5],
-      [0, 3, -5],
+      [5, 2, 3], [-5, 2, -3], [10, 2, -8], [-10, 6, 12],
+      [0, 8, -20], [20, 5, 20], [-15, 8, 15], [12, 2, -12],
+      [3, 3, 0], [-3, 3, 0], [0, 3, 5], [0, 3, -5],
     ];
 
     const collectibleMaterial = new THREE.MeshLambertMaterial({
@@ -329,7 +292,6 @@ class FPSGame {
     });
 
     collectiblePositions.forEach((pos) => {
-      // Removed unused 'index' parameter
       const collectibleGeometry = new THREE.SphereGeometry(0.3, 12, 8);
       const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial);
       collectible.position.set(pos[0], pos[1], pos[2]);
@@ -340,7 +302,7 @@ class FPSGame {
   }
 
   private createPlayer() {
-    console.log("Creating player with capsule physics...");
+    console.log("Creating DEBUG FPS player with instant movement...");
 
     // Create player with capsule collider
     this.player = new PlayerController(this.world, this.scene, {
@@ -353,7 +315,15 @@ class FPSGame {
     // Attach camera to player for FPS view
     this.player.attachCamera(this.camera);
 
-    console.log("✅ Player created with capsule physics!");
+    // MUCH MORE RESPONSIVE SETTINGS
+    this.player.setMouseSensitivity(0.003); // More responsive mouse
+    this.player.setMoveSpeed(6); // Reasonable speed for testing
+    this.player.setJumpForce(12); // Good jump height
+
+    // Enable debug mode
+    this.player.setDebug(true);
+
+    console.log("✅ DEBUG FPS player created with instant movement!");
   }
 
   private setupUI() {
@@ -390,12 +360,14 @@ class FPSGame {
       border-radius: 5px;
     `;
     instructions.innerHTML = `
-      <strong>FPS Controls:</strong><br>
-      • WASD - Move<br>
+      <strong>DEBUG FPS Controls:</strong><br>
+      • WASD - Move (INSTANT)<br>
       • Mouse - Look around<br>
       • Space - Jump<br>
+      • Shift - Walk (slower)<br>
       • Click to lock cursor<br>
-      • ESC to unlock cursor
+      • ESC to unlock cursor<br>
+      <small style="color: #888;">Check console for debug info</small>
     `;
     document.body.appendChild(instructions);
 
@@ -430,15 +402,20 @@ class FPSGame {
 
     const playerInfo = document.getElementById("playerInfo");
     if (playerInfo) {
-      const pos = this.player.getPosition();
-      const vel = this.player.getVelocity();
-      const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+      const debug = this.player.getDebugInfo();
 
       playerInfo.innerHTML = `
-        Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}<br>
-        Speed: ${speed.toFixed(1)} m/s<br>
-        Grounded: ${this.player.isPlayerGrounded() ? "Yes" : "No"}<br>
-        FPS: ${Math.round(1 / this.clock.getDelta())}
+        <strong>DEBUG INFO:</strong><br>
+        Pos: ${debug.position.x}, ${debug.position.y}, ${debug.position.z}<br>
+        Vel: ${debug.velocity.x}, ${debug.velocity.y}, ${debug.velocity.z}<br>
+        Speed: ${debug.speed} u/s<br>
+        Grounded: ${debug.grounded ? "✅" : "❌"}<br>
+        Jump Ready: ${debug.jumpCooldown === "0.000" ? "✅" : "❌"}<br>
+        Time Since Ground: ${debug.timeSinceGrounded}s<br>
+        Jump Pressed: ${debug.jumpPressed ? "✅" : "❌"}<br>
+        Yaw: ${debug.yaw}° Pitch: ${debug.pitch}°<br>
+        Keys: ${debug.activeKeys.join(', ') || 'None'}<br>
+        Delta: ${this.clock.getDelta().toFixed(4)}s
       `;
     }
   }
@@ -473,15 +450,19 @@ class FPSGame {
     });
   }
 
+  // FIXED: Much better game loop with proper timing
   private gameLoop() {
     requestAnimationFrame(() => this.gameLoop());
 
-    const deltaTime = Math.min(this.clock.getDelta(), 0.016); // Cap at 60fps
+    // FIXED: Proper delta time calculation
+    const currentTime = performance.now();
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.02); // Cap at 50fps minimum
+    this.lastTime = currentTime;
 
-    // Update physics world
+    // CRITICAL: Step physics world BEFORE updating player
     this.world.step();
 
-    // Update player
+    // Update player with proper deltaTime
     if (this.player) {
       this.player.update(deltaTime);
     }
