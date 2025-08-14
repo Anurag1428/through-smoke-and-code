@@ -1,4 +1,4 @@
-// src/PlayerController.ts
+// src/PlayerController.ts - Debug FPS Controller with Instant Movement
 import * as THREE from "three";
 // @ts-ignore
 import * as RAPIER from "@dimforge/rapier3d-compat";
@@ -14,28 +14,33 @@ export class PlayerController {
   private mass: number;
   private position: THREE.Vector3;
 
-  // Movement settings
-  private moveSpeed = 10.0;
-  private jumpForce = 15.0;
-  private maxSpeed = 12.0;
-  private friction = 0.85;
-  private airControl = 0.3;
+  // Movement settings - FIXED FOR INSTANT RESPONSE
+  private moveSpeed = 5.0; // Much more reasonable speed
+  private runSpeed = 8.0;
+  private walkSpeed = 3.0;
+  private jumpForce = 10.0; // More reasonable jump
+  private maxSpeed = 15.0;
 
-  // Input state
+  // Input state with debugging
   private keys: { [key: string]: boolean } = {};
-  private mouseMovement = { x: 0, y: 0 };
   private isGrounded = false;
   private groundCheckDistance = 0.1;
 
-  // Camera integration
-  private camera: THREE.Camera | null = null;
+  // Camera system - SIMPLIFIED
+  private camera: THREE.PerspectiveCamera | null = null;
   private cameraHeight = 1.6;
-  private mouseSensitivity = 0.002;
+  private mouseSensitivity = 0.002; // Much more responsive
+  private yaw = 0;
+  private pitch = 0;
+  private maxPitch = Math.PI / 2 - 0.01;
+
+  // Debug flags
+  private debug = true;
+  private frameCount = 0;
+  private lastDebugTime = 0;
 
   // Jump timing
   private jumpCooldown = 0;
-  private coyoteTime = 0.1;
-  private coyoteTimer = 0;
 
   constructor(
     world: RAPIER.World,
@@ -57,18 +62,40 @@ export class PlayerController {
     this.createPhysicsBody();
     this.setupInput();
 
-    console.log("PlayerController initialized with WASD + Space controls");
+    console.log("🚀 DEBUG FPS Controller initialized");
+    this.debugLog("Controller created with debug mode enabled");
+  }
+
+  private debugLog(message: string, data?: any) {
+    if (this.debug) {
+      console.log(`[FPS DEBUG] ${message}`, data || '');
+    }
   }
 
   private createMesh(scene: THREE.Scene) {
-    const geometry = new THREE.CapsuleGeometry(this.radius, this.height - 2 * this.radius, 8, 16);
+    // Create simple capsule visualization
+    const group = new THREE.Group();
+    
+    const cylinderHeight = this.height - 2 * this.radius;
+    const cylinderGeometry = new THREE.CylinderGeometry(this.radius, this.radius, cylinderHeight, 8);
     const material = new THREE.MeshLambertMaterial({
       color: 0x00ff00,
       transparent: true,
-      opacity: 0.1
+      opacity: 0.3
     });
+    
+    const cylinder = new THREE.Mesh(cylinderGeometry, material);
+    group.add(cylinder);
+    
+    const topSphere = new THREE.Mesh(new THREE.SphereGeometry(this.radius, 8, 6), material);
+    topSphere.position.y = cylinderHeight / 2;
+    group.add(topSphere);
+    
+    const bottomSphere = new THREE.Mesh(new THREE.SphereGeometry(this.radius, 8, 6), material);
+    bottomSphere.position.y = -cylinderHeight / 2;
+    group.add(bottomSphere);
 
-    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh = group as any;
     this.mesh.position.copy(this.position);
     this.mesh.castShadow = true;
     scene.add(this.mesh);
@@ -84,68 +111,70 @@ export class PlayerController {
 
     const halfHeight = (this.height / 2) - this.radius;
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, this.radius)
-      .setFriction(this.friction)
+      .setFriction(0.1) // Low friction for FPS feel
       .setRestitution(0.0)
       .setDensity(this.mass / (Math.PI * this.radius * this.radius * this.height));
 
     this.world.createCollider(colliderDesc, this.body);
 
-    console.log(`✅ Player physics: height=${this.height}m, radius=${this.radius}m, mass=${this.mass}kg`);
+    this.debugLog(`Physics body created: height=${this.height}, radius=${this.radius}, mass=${this.mass}`);
   }
 
   private setupInput() {
-    console.log("Setting up input handlers for WASD + Space...");
+    this.debugLog("Setting up input handlers with debugging...");
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!this.keys[e.code]) {
+        this.debugLog(`KEY DOWN: ${e.code}`);
+      }
       this.keys[e.code] = true;
 
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      // Prevent default for movement keys
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
         e.preventDefault();
       }
 
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) {
-        console.log(`Key pressed: ${e.code}`);
-      }
-
-      // Auto-request pointer lock when movement keys are pressed
+      // Auto-request pointer lock
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code) && 
           document.pointerLockElement !== document.body) {
-        document.body.requestPointerLock();
+        this.requestPointerLock();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (this.keys[e.code]) {
+        this.debugLog(`KEY UP: ${e.code}`);
+      }
       this.keys[e.code] = false;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (document.pointerLockElement === document.body) {
-        this.mouseMovement.x += e.movementX || 0;
-        this.mouseMovement.y += e.movementY || 0;
+        const sensitivity = this.mouseSensitivity;
+        
+        this.yaw -= e.movementX * sensitivity;
+        this.pitch -= e.movementY * sensitivity;
+        this.pitch = Math.max(-this.maxPitch, Math.min(this.maxPitch, this.pitch));
+
+        this.updateCameraRotation();
+
+        // Debug mouse movement occasionally
+        if (this.frameCount % 60 === 0 && (Math.abs(e.movementX) > 1 || Math.abs(e.movementY) > 1)) {
+          this.debugLog(`Mouse: X=${e.movementX.toFixed(1)}, Y=${e.movementY.toFixed(1)}, Yaw=${(this.yaw * 180/Math.PI).toFixed(1)}°`);
+        }
       }
     };
 
     const handleClick = (e: MouseEvent) => {
       e.preventDefault();
-      if (document.pointerLockElement !== document.body) {
-        document.body.requestPointerLock()
-          .then(() => console.log("✅ Pointer lock acquired"))
-          .catch(err => console.warn("Pointer lock failed:", err));
-      }
+      this.requestPointerLock();
     };
 
-    // IMPROVED: Don't clear keys on blur, just log it
-    const handleFocusLoss = () => {
-      console.log("Focus lost - but keeping keys active");
-      // Don't clear keys here - this was causing the issue
-    };
-
-    // Handle pointer lock changes
     const handlePointerLockChange = () => {
       if (document.pointerLockElement === document.body) {
-        console.log("✅ Pointer locked successfully");
+        this.debugLog("✅ Pointer locked - Controls active");
       } else {
-        console.log("⚠️ Pointer lock lost");
+        this.debugLog("⚠️ Pointer unlocked - Click to enable");
       }
     };
 
@@ -154,121 +183,145 @@ export class PlayerController {
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('click', handleClick);
     document.addEventListener('pointerlockchange', handlePointerLockChange);
-    window.addEventListener('blur', handleFocusLoss);
 
     (this as any).eventListeners = {
-      handleKeyDown,
-      handleKeyUp,
-      handleMouseMove,
-      handleClick,
-      handleFocusLoss,
-      handlePointerLockChange
+      handleKeyDown, handleKeyUp, handleMouseMove, handleClick, handlePointerLockChange
     };
 
-    console.log("✅ Input handlers set up successfully");
+    this.debugLog("✅ Input handlers ready");
+  }
+
+  private requestPointerLock() {
+    if (document.pointerLockElement !== document.body) {
+      document.body.requestPointerLock()
+        .then(() => this.debugLog("Pointer lock requested successfully"))
+        .catch(err => this.debugLog("Pointer lock failed", err));
+    }
   }
 
   update(deltaTime: number) {
+    this.frameCount++;
     this.jumpCooldown = Math.max(0, this.jumpCooldown - deltaTime);
-
+    
     this.checkGrounded();
-    if (this.isGrounded) {
-      this.coyoteTimer = this.coyoteTime;
-    } else {
-      this.coyoteTimer = Math.max(0, this.coyoteTimer - deltaTime);
-    }
-
     this.handleMovement(deltaTime);
     this.updateCameraPosition();
     this.syncMeshWithBody();
 
-    this.mouseMovement.x = 0;
-    this.mouseMovement.y = 0;
+    // Debug output every second
+    const now = performance.now();
+    if (now - this.lastDebugTime > 1000) {
+      this.debugMovementState();
+      this.lastDebugTime = now;
+    }
+  }
+
+  private debugMovementState() {
+    const vel = this.body.linvel();
+    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+    const activeKeys = Object.keys(this.keys).filter(key => this.keys[key]);
+    
+    this.debugLog(`MOVEMENT STATE:`, {
+      speed: speed.toFixed(2),
+      velocity: `${vel.x.toFixed(2)}, ${vel.y.toFixed(2)}, ${vel.z.toFixed(2)}`,
+      grounded: this.isGrounded,
+      activeKeys: activeKeys,
+      yaw: `${(this.yaw * 180/Math.PI).toFixed(1)}°`,
+      pitch: `${(this.pitch * 180/Math.PI).toFixed(1)}°`
+    });
   }
 
   private checkGrounded() {
     const position = this.body.translation();
-    const rayOrigin = { x: position.x, y: position.y - (this.height / 2) + this.radius, z: position.z };
+    const rayOrigin = { 
+      x: position.x, 
+      y: position.y - (this.height / 2) + this.radius, 
+      z: position.z 
+    };
     const rayDirection = { x: 0, y: -1, z: 0 };
     const maxDistance = this.groundCheckDistance + 0.05;
 
     const ray = new RAPIER.Ray(rayOrigin, rayDirection);
     const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, this.body);
 
+    const wasGrounded = this.isGrounded;
     this.isGrounded = hit !== null;
+
+    // Debug ground state changes
+    if (wasGrounded !== this.isGrounded) {
+      this.debugLog(`Ground state changed: ${wasGrounded} -> ${this.isGrounded}`);
+    }
   }
 
   private handleMovement(deltaTime: number) {
+    // COMPLETELY REWRITTEN FOR INSTANT RESPONSE
     const currentVel = this.body.linvel();
     
-    // Get camera direction for movement relative to view
-    let forward = new THREE.Vector3(0, 0, -1);
-    let right = new THREE.Vector3(1, 0, 0);
+    // Get input immediately
+    let forwardInput = 0;
+    let rightInput = 0;
+    
+    if (this.keys['KeyW']) forwardInput = 1;
+    if (this.keys['KeyS']) forwardInput = -1;
+    if (this.keys['KeyD']) rightInput = 1;
+    if (this.keys['KeyA']) rightInput = -1;
 
-    if (this.camera) {
-      // Get camera's world direction
-      this.camera.getWorldDirection(forward);
-      forward.y = 0; // Keep movement horizontal only
-      forward.normalize();
-      right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-      right.normalize();
-    }
-
-    // Calculate movement
-    const movement = new THREE.Vector3(0, 0, 0);
-    const moveSpeed = this.moveSpeed;
-
-    if (this.keys['KeyW']) {
-      movement.add(forward);
-      console.log("Moving forward");
-    }
-    if (this.keys['KeyS']) {
-      movement.sub(forward);
-      console.log("Moving backward");
-    }
-    if (this.keys['KeyA']) {
-      movement.sub(right);
-      console.log("Moving left");
-    }
-    if (this.keys['KeyD']) {
-      movement.add(right);
-      console.log("Moving right");
-    }
-
-    // Normalize movement to prevent faster diagonal movement
-    if (movement.length() > 0) {
-      movement.normalize();
-      
-      // Apply movement force
-      const force = movement.multiplyScalar(moveSpeed * deltaTime * 100);
-      
-      // Check current horizontal speed
-      const horizontalSpeed = Math.sqrt(currentVel.x ** 2 + currentVel.z ** 2);
-      
-      if (horizontalSpeed < this.maxSpeed) {
-        this.body.addForce({ x: force.x, y: 0, z: force.z }, true);
+    // Debug input
+    if (forwardInput !== 0 || rightInput !== 0) {
+      if (this.frameCount % 30 === 0) { // Debug every 30 frames when moving
+        this.debugLog(`Input: forward=${forwardInput}, right=${rightInput}`);
       }
     }
 
-    // FIXED: Jumping logic
-    if (this.keys['Space'] && this.isGrounded && this.jumpCooldown <= 0) {
-      console.log("Attempting jump - grounded:", this.isGrounded);
-      this.body.applyImpulse({ x: 0, y: this.jumpForce, z: 0 }, true);
-      this.jumpCooldown = 0.2; // Longer cooldown to prevent double jumping
-      console.log("Jump applied!");
+    // Calculate movement direction relative to camera
+    const yawRadians = this.yaw;
+    const moveDirection = new THREE.Vector3();
+    
+    if (forwardInput !== 0 || rightInput !== 0) {
+      moveDirection.x = Math.cos(yawRadians) * forwardInput + Math.sin(yawRadians) * rightInput;
+      moveDirection.z = Math.sin(yawRadians) * forwardInput - Math.cos(yawRadians) * rightInput;
+      moveDirection.normalize();
     }
 
-    // Apply friction when not moving
-    if (movement.length() === 0) {
-      const dampingForce = this.isGrounded ? 0.8 : 0.95;
+    // INSTANT MOVEMENT - Set velocity directly for immediate response
+    if (moveDirection.length() > 0) {
+      const isWalking = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
+      const targetSpeed = isWalking ? this.walkSpeed : this.moveSpeed;
+      
+      // Set horizontal velocity directly for instant response
+      const newVelX = moveDirection.x * targetSpeed;
+      const newVelZ = moveDirection.z * targetSpeed;
+      
       this.body.setLinvel({
-        x: currentVel.x * dampingForce,
-        y: currentVel.y, // Don't dampen Y velocity (gravity)
-        z: currentVel.z * dampingForce
+        x: newVelX,
+        y: currentVel.y, // Keep Y velocity for gravity/jumping
+        z: newVelZ
+      }, true);
+
+      if (this.frameCount % 30 === 0) {
+        this.debugLog(`Setting velocity: ${newVelX.toFixed(2)}, ${newVelZ.toFixed(2)}`);
+      }
+    } else {
+      // Stop immediately when no input
+      this.body.setLinvel({
+        x: 0,
+        y: currentVel.y,
+        z: 0
       }, true);
     }
 
-    // Limit falling speed
+    // Jumping
+    if (this.keys['Space'] && this.isGrounded && this.jumpCooldown <= 0) {
+      this.body.setLinvel({
+        x: currentVel.x,
+        y: this.jumpForce,
+        z: currentVel.z
+      }, true);
+      this.jumpCooldown = 0.2;
+      this.debugLog(`JUMP! Applied Y velocity: ${this.jumpForce}`);
+    }
+
+    // Terminal velocity
     if (currentVel.y < -20) {
       this.body.setLinvel({
         x: currentVel.x,
@@ -276,6 +329,11 @@ export class PlayerController {
         z: currentVel.z
       }, true);
     }
+  }
+
+  private updateCameraRotation() {
+    if (!this.camera) return;
+    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
   }
 
   private updateCameraPosition() {
@@ -289,38 +347,17 @@ export class PlayerController {
     );
 
     this.camera.position.copy(cameraPos);
-
-    // Apply mouse look ONLY when pointer is locked
-    if (document.pointerLockElement === document.body && this.camera instanceof THREE.PerspectiveCamera) {
-      if (Math.abs(this.mouseMovement.x) > 0 || Math.abs(this.mouseMovement.y) > 0) {
-        const sensitivity = this.mouseSensitivity;
-        
-        // Apply rotation
-        this.camera.rotation.y -= this.mouseMovement.x * sensitivity;
-        this.camera.rotation.x -= this.mouseMovement.y * sensitivity;
-
-        // Limit vertical look to prevent camera flipping
-        this.camera.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.camera.rotation.x));
-
-        // Ensure rotation order
-        this.camera.rotation.order = 'YXZ';
-        
-        console.log(`Camera rotation: x=${this.camera.rotation.x.toFixed(2)}, y=${this.camera.rotation.y.toFixed(2)}`);
-      }
-    }
   }
 
   private syncMeshWithBody() {
     const position = this.body.translation();
-    const rotation = this.body.rotation();
-
     this.mesh.position.set(position.x, position.y, position.z);
-    this.mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   }
 
-  attachCamera(camera: THREE.Camera) {
+  // Public methods
+  attachCamera(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
-    console.log("✅ Camera attached to player");
+    this.debugLog("✅ Camera attached");
   }
 
   getPosition(): THREE.Vector3 {
@@ -336,19 +373,34 @@ export class PlayerController {
   setPosition(position: THREE.Vector3) {
     this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    console.log(`Player teleported to: ${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`);
+    this.debugLog(`Teleported to: ${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`);
   }
 
   isPlayerGrounded(): boolean {
     return this.isGrounded;
   }
 
-  applyForce(force: THREE.Vector3) {
-    this.body.addForce({ x: force.x, y: force.y, z: force.z }, true);
+  setMouseSensitivity(sensitivity: number) {
+    this.mouseSensitivity = sensitivity;
+    this.debugLog(`Mouse sensitivity: ${sensitivity}`);
   }
 
-  applyImpulse(impulse: THREE.Vector3) {
-    this.body.applyImpulse({ x: impulse.x, y: impulse.y, z: impulse.z }, true);
+  setMoveSpeed(speed: number) {
+    this.moveSpeed = speed;
+    this.runSpeed = speed * 1.5;
+    this.debugLog(`Move speed: ${speed}, Run speed: ${this.runSpeed}`);
+  }
+
+  setJumpForce(force: number) {
+    this.jumpForce = force;
+    this.debugLog(`Jump force: ${force}`);
+  }
+
+  getCameraAngles(): { yaw: number; pitch: number } {
+    return { 
+      yaw: this.yaw * (180 / Math.PI), 
+      pitch: this.pitch * (180 / Math.PI) 
+    };
   }
 
   getBody(): RAPIER.RigidBody {
@@ -359,18 +411,28 @@ export class PlayerController {
     return this.mesh;
   }
 
-  setMoveSpeed(speed: number) {
-    this.moveSpeed = speed;
-    console.log(`Movement speed set to: ${speed}`);
-  }
-
-  setJumpForce(force: number) {
-    this.jumpForce = force;
-    console.log(`Jump force set to: ${force}`);
-  }
-
   getInputState(): { [key: string]: boolean } {
     return { ...this.keys };
+  }
+
+  // Debug methods
+  setDebug(enabled: boolean) {
+    this.debug = enabled;
+    this.debugLog(`Debug mode: ${enabled ? 'ON' : 'OFF'}`);
+  }
+
+  getDebugInfo(): any {
+    const vel = this.body.linvel();
+    const pos = this.body.translation();
+    return {
+      position: { x: pos.x.toFixed(2), y: pos.y.toFixed(2), z: pos.z.toFixed(2) },
+      velocity: { x: vel.x.toFixed(2), y: vel.y.toFixed(2), z: vel.z.toFixed(2) },
+      speed: Math.sqrt(vel.x * vel.x + vel.z * vel.z).toFixed(2),
+      grounded: this.isGrounded,
+      yaw: (this.yaw * 180/Math.PI).toFixed(1),
+      pitch: (this.pitch * 180/Math.PI).toFixed(1),
+      activeKeys: Object.keys(this.keys).filter(key => this.keys[key])
+    };
   }
 
   reset(position?: THREE.Vector3) {
@@ -378,12 +440,16 @@ export class PlayerController {
     this.setPosition(resetPos);
     this.keys = {};
     this.jumpCooldown = 0;
-    this.coyoteTimer = 0;
-    console.log("Player state reset");
+    this.yaw = 0;
+    this.pitch = 0;
+    if (this.camera) {
+      this.camera.rotation.set(0, 0, 0, 'YXZ');
+    }
+    this.debugLog("Player reset");
   }
 
   dispose() {
-    console.log("Disposing PlayerController...");
+    this.debugLog("Disposing controller...");
 
     if ((this as any).eventListeners) {
       const listeners = (this as any).eventListeners;
@@ -392,7 +458,6 @@ export class PlayerController {
       document.removeEventListener('mousemove', listeners.handleMouseMove);
       document.removeEventListener('click', listeners.handleClick);
       document.removeEventListener('pointerlockchange', listeners.handlePointerLockChange);
-      window.removeEventListener('blur', listeners.handleFocusLoss);
     }
 
     if (this.body && this.world) {
@@ -403,6 +468,6 @@ export class PlayerController {
       this.mesh.parent.remove(this.mesh);
     }
 
-    console.log("✅ PlayerController disposed");
+    this.debugLog("✅ Controller disposed");
   }
 }
