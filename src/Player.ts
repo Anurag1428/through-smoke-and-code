@@ -1,4 +1,4 @@
-// src/PlayerController.ts - Debug FPS Controller with Instant Movement
+// src/PlayerController.ts - FIXED FPS Controller with Correct Movement
 import * as THREE from "three";
 // @ts-ignore
 import * as RAPIER from "@dimforge/rapier3d-compat";
@@ -15,10 +15,10 @@ export class PlayerController {
   private position: THREE.Vector3;
 
   // Movement settings - FIXED FOR INSTANT RESPONSE
-  private moveSpeed = 5.0; // Much more reasonable speed
+  private moveSpeed = 5.0;
   private runSpeed = 8.0;
   private walkSpeed = 3.0;
-  private jumpForce = 10.0; // More reasonable jump
+  private jumpForce = 10.0;
   private maxSpeed = 15.0;
 
   // Input state with debugging
@@ -29,7 +29,7 @@ export class PlayerController {
   // Camera system - SIMPLIFIED
   private camera: THREE.PerspectiveCamera | null = null;
   private cameraHeight = 1.6;
-  private mouseSensitivity = 0.002; // Much more responsive
+  private mouseSensitivity = 0.002;
   private yaw = 0;
   private pitch = 0;
   private maxPitch = Math.PI / 2 - 0.01;
@@ -62,8 +62,8 @@ export class PlayerController {
     this.createPhysicsBody();
     this.setupInput();
 
-    console.log("🚀 DEBUG FPS Controller initialized");
-    this.debugLog("Controller created with debug mode enabled");
+    console.log("🚀 FIXED FPS Controller initialized");
+    this.debugLog("Controller created with FIXED movement controls");
   }
 
   private debugLog(message: string, data?: any) {
@@ -111,7 +111,7 @@ export class PlayerController {
 
     const halfHeight = (this.height / 2) - this.radius;
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, this.radius)
-      .setFriction(0.1) // Low friction for FPS feel
+      .setFriction(0.1)
       .setRestitution(0.0)
       .setDensity(this.mass / (Math.PI * this.radius * this.radius * this.height));
 
@@ -121,7 +121,7 @@ export class PlayerController {
   }
 
   private setupInput() {
-    this.debugLog("Setting up input handlers with debugging...");
+    this.debugLog("Setting up FIXED input handlers...");
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!this.keys[e.code]) {
@@ -130,13 +130,18 @@ export class PlayerController {
       this.keys[e.code] = true;
 
       // Prevent default for movement keys
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+      const movementKeys = [
+        'KeyW', 'KeyA', 'KeyS', 'KeyD', 
+        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+        'Space', 'ShiftLeft', 'ShiftRight'
+      ];
+      if (movementKeys.includes(e.code)) {
         e.preventDefault();
       }
 
       // Auto-request pointer lock
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code) && 
-          document.pointerLockElement !== document.body) {
+      const wasdKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (wasdKeys.includes(e.code) && document.pointerLockElement !== document.body) {
         this.requestPointerLock();
       }
     };
@@ -188,7 +193,7 @@ export class PlayerController {
       handleKeyDown, handleKeyUp, handleMouseMove, handleClick, handlePointerLockChange
     };
 
-    this.debugLog("✅ Input handlers ready");
+    this.debugLog("✅ FIXED Input handlers ready");
   }
 
   private requestPointerLock() {
@@ -254,33 +259,54 @@ export class PlayerController {
   }
 
   private handleMovement(deltaTime: number) {
-    // COMPLETELY REWRITTEN FOR INSTANT RESPONSE
+    // COMPLETELY FIXED MOVEMENT SYSTEM
     const currentVel = this.body.linvel();
     
-    // Get input immediately
+    // Get input immediately - FIXED KEY MAPPINGS
     let forwardInput = 0;
     let rightInput = 0;
     
-    if (this.keys['KeyW']) forwardInput = 1;
-    if (this.keys['KeyS']) forwardInput = -1;
-    if (this.keys['KeyD']) rightInput = 1;
-    if (this.keys['KeyA']) rightInput = -1;
+    // CORRECT WASD + Arrow Keys mapping
+    if (this.keys['KeyW'] || this.keys['ArrowUp']) forwardInput = 1;      // Forward
+    if (this.keys['KeyS'] || this.keys['ArrowDown']) forwardInput = -1;   // Backward  
+    if (this.keys['KeyD'] || this.keys['ArrowRight']) rightInput = 1;     // Right
+    if (this.keys['KeyA'] || this.keys['ArrowLeft']) rightInput = -1;     // Left
 
     // Debug input
     if (forwardInput !== 0 || rightInput !== 0) {
-      if (this.frameCount % 30 === 0) { // Debug every 30 frames when moving
-        this.debugLog(`Input: forward=${forwardInput}, right=${rightInput}`);
+      if (this.frameCount % 30 === 0) {
+        this.debugLog(`Input: W/S=${forwardInput}, A/D=${rightInput}`);
       }
     }
 
-    // Calculate movement direction relative to camera
-    const yawRadians = this.yaw;
+    // COMPLETELY FIXED MOVEMENT DIRECTION CALCULATION
     const moveDirection = new THREE.Vector3();
     
     if (forwardInput !== 0 || rightInput !== 0) {
-      moveDirection.x = Math.cos(yawRadians) * forwardInput + Math.sin(yawRadians) * rightInput;
-      moveDirection.z = Math.sin(yawRadians) * forwardInput - Math.cos(yawRadians) * rightInput;
+      // CORRECT FPS movement calculation
+      // Forward/backward along camera's forward direction
+      const forward = new THREE.Vector3(
+        -Math.sin(this.yaw),  // X component (negative sin for correct forward)
+        0,
+        -Math.cos(this.yaw)   // Z component (negative cos for correct forward)
+      );
+      
+      // Right/left perpendicular to forward direction  
+      const right = new THREE.Vector3(
+        Math.cos(this.yaw),   // X component 
+        0,
+        -Math.sin(this.yaw)   // Z component
+      );
+
+      // Combine forward and right movements
+      moveDirection.addScaledVector(forward, forwardInput);
+      moveDirection.addScaledVector(right, rightInput);
       moveDirection.normalize();
+
+      if (this.frameCount % 60 === 0 && moveDirection.length() > 0) {
+        this.debugLog(`Movement vector: X=${moveDirection.x.toFixed(2)}, Z=${moveDirection.z.toFixed(2)}`);
+        this.debugLog(`Yaw: ${(this.yaw * 180/Math.PI).toFixed(1)}°`);
+      }
     }
 
     // INSTANT MOVEMENT - Set velocity directly for immediate response
@@ -299,7 +325,7 @@ export class PlayerController {
       }, true);
 
       if (this.frameCount % 30 === 0) {
-        this.debugLog(`Setting velocity: ${newVelX.toFixed(2)}, ${newVelZ.toFixed(2)}`);
+        this.debugLog(`Setting velocity: X=${newVelX.toFixed(2)}, Z=${newVelZ.toFixed(2)}`);
       }
     } else {
       // Stop immediately when no input
