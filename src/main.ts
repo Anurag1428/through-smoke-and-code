@@ -1,5 +1,6 @@
-// main.ts - FIXED FPS Game with proper physics timing
+// main.ts - FPS Game with GLB World Loading
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { PlayerController } from "./Player";
 
 class FPSGame {
@@ -7,6 +8,7 @@ class FPSGame {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
   private clock: THREE.Clock;
+  private gltfLoader: GLTFLoader;
 
   // Physics
   private RAPIER: any;
@@ -14,8 +16,7 @@ class FPSGame {
   private player: PlayerController | null = null;
 
   // Game objects
-  private ground: THREE.Mesh[] = [];
-  private obstacles: THREE.Mesh[] = [];
+  private worldModel: THREE.Group | null = null;
   private collectibles: THREE.Mesh[] = [];
 
   // FIXED: Add proper time tracking
@@ -24,6 +25,7 @@ class FPSGame {
   constructor() {
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
+    this.gltfLoader = new GLTFLoader();
     this.setupRenderer();
     this.setupCamera();
     this.setupScene();
@@ -105,7 +107,7 @@ class FPSGame {
 
   async init() {
     try {
-      console.log("Initializing FPS Game...");
+      console.log("Initializing FPS Game with GLB World...");
 
       // Load and initialize Rapier physics
       // @ts-ignore
@@ -117,20 +119,21 @@ class FPSGame {
 
       console.log("✅ Physics initialized");
 
-      // Create game world
-      this.createGround();
-      this.createObstacles();
+      // Load GLB world model FIRST
+      await this.loadGLBWorld();
+
+      // Create collectibles (optional - can be removed if not needed)
       this.createCollectibles();
 
-      // Create player (this is the main focus)
+      // Create player
       this.createPlayer();
 
       // Setup UI
       this.setupUI();
 
-      console.log("✅ Game initialized successfully!");
+      console.log("✅ Game initialized successfully with GLB world!");
 
-      // FIXED: Initialize time tracking
+      // Initialize time tracking
       this.lastTime = performance.now();
 
       // Start game loop
@@ -140,141 +143,195 @@ class FPSGame {
     }
   }
 
-  private createGround() {
-    console.log("Creating ground...");
+  private async loadGLBWorld(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log("Loading GLB world model...");
 
-    // Main ground platform
-    const mainGroundGeometry = new THREE.BoxGeometry(50, 1, 50);
-    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4a5d4a });
-
-    const mainGround = new THREE.Mesh(mainGroundGeometry, groundMaterial);
-    mainGround.position.set(0, -0.5, 0);
-    mainGround.receiveShadow = true;
-    this.scene.add(mainGround);
-    this.ground.push(mainGround);
-
-    // Create physics body for ground
-    const groundBodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0);
-    const groundBody = this.world.createRigidBody(groundBodyDesc);
-    const groundColliderDesc = this.RAPIER.ColliderDesc.cuboid(25, 0.5, 25)
-      .setFriction(0.8)
-      .setRestitution(0.0);
-    this.world.createCollider(groundColliderDesc, groundBody);
-
-    // Create additional platforms for testing collision
-    const platforms = [
-      { pos: [15, 2, -10], size: [8, 1, 8] },
-      { pos: [-15, 4, 10], size: [6, 1, 6] },
-      { pos: [0, 6, -20], size: [4, 1, 4] },
-      { pos: [20, 3, 20], size: [5, 1, 10] },
-      // Add some ramps for testing
-      { pos: [10, 1, 0], size: [3, 0.2, 6], rotation: [0, 0, 0.3] },
-      { pos: [-10, 1, 0], size: [3, 0.2, 6], rotation: [0, 0, -0.3] },
-    ];
-
-    platforms.forEach((platformData) => {
-      const platformGeometry = new THREE.BoxGeometry(
-        ...platformData.size as [number, number, number]
+      // Replace 'path/to/your/world.glb' with the actual path to your GLB file
+      // You can either:
+      // 1. Put the GLB file in your public folder and reference it like '/world.glb'
+      // 2. Import it and use the imported path
+      // 3. Load it from a URL
+      
+      const glbPath = '/world.glb'; // <<<< CHANGE THIS TO YOUR GLB FILE PATH
+      
+      this.gltfLoader.load(
+        glbPath,
+        (gltf) => {
+          console.log("✅ GLB world loaded successfully!");
+          
+          this.worldModel = gltf.scene;
+          
+          // Scale the model if needed (adjust as necessary)
+          this.worldModel.scale.set(1, 1, 1);
+          
+          // Position the model
+          this.worldModel.position.set(0, 0, 0);
+          
+          // Enable shadows for all meshes in the model
+          this.worldModel.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              
+              // Ensure materials work with shadows
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(material => {
+                    if (material instanceof THREE.MeshStandardMaterial || 
+                        material instanceof THREE.MeshPhongMaterial ||
+                        material instanceof THREE.MeshLambertMaterial) {
+                      material.needsUpdate = true;
+                    }
+                  });
+                } else if (child.material instanceof THREE.MeshStandardMaterial || 
+                          child.material instanceof THREE.MeshPhongMaterial ||
+                          child.material instanceof THREE.MeshLambertMaterial) {
+                  child.material.needsUpdate = true;
+                }
+              }
+            }
+          });
+          
+          // Add the model to the scene
+          this.scene.add(this.worldModel);
+          
+          // Create physics colliders for the world
+          this.createWorldPhysics();
+          
+          console.log("✅ GLB world added to scene with physics");
+          resolve();
+        },
+        (progress) => {
+          const percentComplete = (progress.loaded / progress.total) * 100;
+          console.log(`Loading GLB world: ${percentComplete.toFixed(1)}%`);
+        },
+        (error) => {
+          console.error("❌ Failed to load GLB world:", error);
+          console.log("Creating fallback world...");
+          this.createFallbackWorld();
+          resolve(); // Continue with fallback instead of rejecting
+        }
       );
-      const platform = new THREE.Mesh(platformGeometry, groundMaterial);
-      platform.position.set(...platformData.pos as [number, number, number]);
-
-      // Apply rotation if specified
-      if (platformData.rotation) {
-        platform.rotation.set(...platformData.rotation as [number, number, number]);
-      }
-
-      platform.receiveShadow = true;
-      this.scene.add(platform);
-      this.ground.push(platform);
-
-      // Physics body
-      const bodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(
-        ...platformData.pos as [number, number, number]
-      );
-
-      if (platformData.rotation) {
-        const euler = new THREE.Euler(...platformData.rotation as [number, number, number]);
-        const quaternion = new THREE.Quaternion().setFromEuler(euler);
-        bodyDesc.setRotation({
-          x: quaternion.x,
-          y: quaternion.y,
-          z: quaternion.z,
-          w: quaternion.w,
-        });
-      }
-
-      const body = this.world.createRigidBody(bodyDesc);
-      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
-        platformData.size[0] / 2,
-        platformData.size[1] / 2,
-        platformData.size[2] / 2
-      ).setFriction(0.8);
-      this.world.createCollider(colliderDesc, body);
     });
   }
 
-  private createObstacles() {
-    console.log("Creating obstacles...");
+  private createWorldPhysics() {
+    if (!this.worldModel) return;
 
-    const obstaclePositions = [
-      [8, 1, 5], [-8, 1, -5], [12, 1, -15], [-12, 5, 10],
-      [3, 1, 8], [-5, 1, -8], [18, 4, 20], [-18, 7, 15],
-      [2, 1, 2], [-2, 1, -2], [6, 1, -6], [-6, 1, 6],
-      [0, 1, 10], [0, 1, -10], [15, 1, 0], [-15, 1, 0],
-    ];
+    console.log("Creating physics colliders for GLB world...");
 
-    const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
-
-    obstaclePositions.forEach((pos) => {
-      const height = 2 + Math.random() * 3;
-      const width = 0.8 + Math.random() * 1.2;
-
-      const obstacleGeometry = new THREE.BoxGeometry(width, height, width);
-      const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
-      obstacle.position.set(pos[0], pos[1] + height / 2, pos[2]);
-      obstacle.castShadow = true;
-      obstacle.receiveShadow = true;
-      this.scene.add(obstacle);
-      this.obstacles.push(obstacle);
-
-      // Physics body (static obstacles)
-      const bodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(
-        pos[0], pos[1] + height / 2, pos[2]
-      );
-      const body = this.world.createRigidBody(bodyDesc);
-      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
-        width / 2, height / 2, width / 2
-      ).setFriction(0.6);
-      this.world.createCollider(colliderDesc, body);
+    // Method 1: Create physics from geometry (more accurate but complex)
+    this.worldModel.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.geometry) {
+        this.createMeshCollider(child);
+      }
     });
 
-    // Add some dynamic physics objects for testing
-    for (let i = 0; i < 5; i++) {
-      const x = (Math.random() - 0.5) * 20;
-      const z = (Math.random() - 0.5) * 20;
-      const y = 5 + i * 2;
+    // Method 2: If you want simpler box colliders, uncomment this instead:
+    // this.createSimpleWorldColliders();
+  }
 
-      const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-      const boxMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b6b });
-      const box = new THREE.Mesh(boxGeometry, boxMaterial);
-      box.position.set(x, y, z);
-      box.castShadow = true;
-      box.receiveShadow = true;
-      this.scene.add(box);
+  private createMeshCollider(mesh: THREE.Mesh) {
+    // Get world position and rotation
+    const worldPosition = new THREE.Vector3();
+    const worldQuaternion = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    mesh.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale);
 
-      // Dynamic physics body
-      const bodyDesc = this.RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z);
-      const body = this.world.createRigidBody(bodyDesc);
-      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5)
-        .setFriction(0.7)
-        .setRestitution(0.3);
-      this.world.createCollider(colliderDesc, body);
+    // Create physics body
+    const bodyDesc = this.RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(worldPosition.x, worldPosition.y, worldPosition.z)
+      .setRotation(worldQuaternion);
 
-      // Store reference to sync with Three.js mesh
-      (box as any).physicsBody = body;
-      this.obstacles.push(box);
+    const body = this.world.createRigidBody(bodyDesc);
+
+    // For complex geometry, you might want to use simplified shapes
+    // This creates a trimesh collider (exact geometry)
+    if (mesh.geometry.index) {
+      const positions = mesh.geometry.attributes.position.array;
+      const indices = mesh.geometry.index.array;
+      
+      // Scale positions by world scale
+      const scaledPositions = new Float32Array(positions.length);
+      for (let i = 0; i < positions.length; i += 3) {
+        scaledPositions[i] = positions[i] * worldScale.x;
+        scaledPositions[i + 1] = positions[i + 1] * worldScale.y;
+        scaledPositions[i + 2] = positions[i + 2] * worldScale.z;
+      }
+      
+      try {
+        const colliderDesc = this.RAPIER.ColliderDesc.trimesh(scaledPositions, indices)
+          .setFriction(0.8)
+          .setRestitution(0.1);
+        
+        this.world.createCollider(colliderDesc, body);
+        console.log(`✅ Created trimesh collider for ${mesh.name || 'unnamed mesh'}`);
+      } catch (error) {
+        console.warn(`Failed to create trimesh collider, using bounding box instead:`, error);
+        this.createBoundingBoxCollider(mesh, body, worldScale);
+      }
+    } else {
+      // Fallback to bounding box
+      this.createBoundingBoxCollider(mesh, body, worldScale);
     }
+  }
+
+  private createBoundingBoxCollider(mesh: THREE.Mesh, body: any, worldScale: THREE.Vector3) {
+    // Create a bounding box collider as fallback
+    const boundingBox = new THREE.Box3().setFromObject(mesh);
+    const size = boundingBox.getSize(new THREE.Vector3());
+    
+    const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
+      (size.x * worldScale.x) / 2,
+      (size.y * worldScale.y) / 2,
+      (size.z * worldScale.z) / 2
+    ).setFriction(0.8).setRestitution(0.1);
+    
+    this.world.createCollider(colliderDesc, body);
+    console.log(`✅ Created bounding box collider for ${mesh.name || 'unnamed mesh'}`);
+  }
+
+  private createSimpleWorldColliders() {
+    // Alternative: Create simple colliders based on bounding boxes
+    if (!this.worldModel) return;
+    
+    const boundingBox = new THREE.Box3().setFromObject(this.worldModel);
+    const size = boundingBox.getSize(new THREE.Vector3());
+    const center = boundingBox.getCenter(new THREE.Vector3());
+    
+    // Create a large ground plane
+    const groundBodyDesc = this.RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(center.x, boundingBox.min.y, center.z);
+    const groundBody = this.world.createRigidBody(groundBodyDesc);
+    const groundColliderDesc = this.RAPIER.ColliderDesc.cuboid(size.x / 2, 0.1, size.z / 2)
+      .setFriction(0.8);
+    this.world.createCollider(groundColliderDesc, groundBody);
+    
+    console.log("✅ Created simple world colliders");
+  }
+
+  private createFallbackWorld() {
+    console.log("Creating fallback world...");
+    
+    // Create a simple ground plane as fallback
+    const groundGeometry = new THREE.PlaneGeometry(50, 50);
+    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4a5d4a });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+    
+    // Create physics for fallback ground
+    const bodyDesc = this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0);
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = this.RAPIER.ColliderDesc.cuboid(25, 0.1, 25)
+      .setFriction(0.8);
+    this.world.createCollider(colliderDesc, body);
+    
+    console.log("✅ Fallback world created");
   }
 
   private createCollectibles() {
@@ -283,7 +340,6 @@ class FPSGame {
     const collectiblePositions = [
       [5, 2, 3], [-5, 2, -3], [10, 2, -8], [-10, 6, 12],
       [0, 8, -20], [20, 5, 20], [-15, 8, 15], [12, 2, -12],
-      [3, 3, 0], [-3, 3, 0], [0, 3, 5], [0, 3, -5],
     ];
 
     const collectibleMaterial = new THREE.MeshLambertMaterial({
@@ -302,28 +358,36 @@ class FPSGame {
   }
 
   private createPlayer() {
-    console.log("Creating DEBUG FPS player with instant movement...");
+    console.log("Creating FPS player...");
 
-    // Create player with capsule collider
+    // Find a good spawn position
+    let spawnPosition = new THREE.Vector3(0, 5, 0);
+    
+    if (this.worldModel) {
+      // Try to spawn the player at a reasonable height above the world
+      const boundingBox = new THREE.Box3().setFromObject(this.worldModel);
+      spawnPosition.y = boundingBox.max.y + 2;
+      console.log(`Spawning player at height: ${spawnPosition.y}`);
+    }
+
+    // Create player
     this.player = new PlayerController(this.world, this.scene, {
-      height: 1.8, // 1.8m tall
-      radius: 0.4, // 0.4m radius
-      mass: 70, // 70kg
-      position: new THREE.Vector3(0, 5, 0),
+      height: 1.8,
+      radius: 0.4,
+      mass: 70,
+      position: spawnPosition,
     });
 
     // Attach camera to player for FPS view
     this.player.attachCamera(this.camera);
 
-    // MUCH MORE RESPONSIVE SETTINGS
-    this.player.setMouseSensitivity(0.003); // More responsive mouse
-    this.player.setMoveSpeed(6); // Reasonable speed for testing
-    this.player.setJumpForce(12); // Good jump height
-
-    // Enable debug mode
+    // Configure player settings
+    this.player.setMouseSensitivity(0.003);
+    this.player.setMoveSpeed(6);
+    this.player.setJumpForce(12);
     this.player.setDebug(true);
 
-    console.log("✅ DEBUG FPS player created with instant movement!");
+    console.log("✅ FPS player created!");
   }
 
   private setupUI() {
@@ -360,14 +424,14 @@ class FPSGame {
       border-radius: 5px;
     `;
     instructions.innerHTML = `
-      <strong>DEBUG FPS Controls:</strong><br>
-      • WASD - Move (INSTANT)<br>
+      <strong>FPS Controls:</strong><br>
+      • WASD - Move<br>
       • Mouse - Look around<br>
       • Space - Jump<br>
       • Shift - Walk (slower)<br>
       • Click to lock cursor<br>
       • ESC to unlock cursor<br>
-      <small style="color: #888;">Check console for debug info</small>
+      <small style="color: #888;">GLB World Loaded!</small>
     `;
     document.body.appendChild(instructions);
 
@@ -411,11 +475,9 @@ class FPSGame {
         Speed: ${debug.speed} u/s<br>
         Grounded: ${debug.grounded ? "✅" : "❌"}<br>
         Jump Ready: ${debug.jumpCooldown === "0.000" ? "✅" : "❌"}<br>
-        Time Since Ground: ${debug.timeSinceGrounded}s<br>
-        Jump Pressed: ${debug.jumpPressed ? "✅" : "❌"}<br>
         Yaw: ${debug.yaw}° Pitch: ${debug.pitch}°<br>
         Keys: ${debug.activeKeys.join(', ') || 'None'}<br>
-        Delta: ${this.clock.getDelta().toFixed(4)}s
+        GLB World: ${this.worldModel ? "✅" : "❌"}
       `;
     }
   }
@@ -428,7 +490,6 @@ class FPSGame {
       collectible.position.y += Math.sin(time * 3 + offset) * 0.005;
       collectible.rotation.y += 0.02;
 
-      // Glow effect
       const intensity = 0.5 + Math.sin(time * 4 + offset) * 0.3;
       (collectible.material as THREE.MeshLambertMaterial).emissive.setScalar(
         intensity * 0.1
@@ -436,41 +497,22 @@ class FPSGame {
     });
   }
 
-  private updateDynamicObjects() {
-    // Update dynamic physics objects to sync with their physics bodies
-    this.obstacles.forEach((obstacle) => {
-      const physicsBody = (obstacle as any).physicsBody;
-      if (physicsBody) {
-        const position = physicsBody.translation();
-        const rotation = physicsBody.rotation();
-
-        obstacle.position.set(position.x, position.y, position.z);
-        obstacle.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
-      }
-    });
-  }
-
-  // FIXED: Much better game loop with proper timing
   private gameLoop() {
     requestAnimationFrame(() => this.gameLoop());
 
-    // FIXED: Proper delta time calculation
     const currentTime = performance.now();
-    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.02); // Cap at 50fps minimum
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.02);
     this.lastTime = currentTime;
 
-    // CRITICAL: Step physics world BEFORE updating player
+    // Step physics world
     this.world.step();
 
-    // Update player with proper deltaTime
+    // Update player
     if (this.player) {
       this.player.update(deltaTime);
     }
 
-    // Update dynamic objects
-    this.updateDynamicObjects();
-
-    // Animate game objects
+    // Animate collectibles
     this.animateCollectibles();
 
     // Update UI
