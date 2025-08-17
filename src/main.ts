@@ -153,7 +153,8 @@ class FPSGame {
       // 2. Import it and use the imported path
       // 3. Load it from a URL
       
-      const glbPath = '/world.glb'; // <<<< CHANGE THIS TO YOUR GLB FILE PATH
+      // const glbPath = '/world.glb'; // <<<< CHANGE THIS TO YOUR GLB FILE PATH
+      const glbPath = '/public/Anurag_Platform.glb'
       
       this.gltfLoader.load(
         glbPath,
