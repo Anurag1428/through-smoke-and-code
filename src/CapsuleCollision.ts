@@ -85,7 +85,7 @@ export class CapsuleCollision {
 
     // Process horizontal movement first (with wall sliding)
     if (horizontalMovement.length() > 0.001) {
-      this.processHorizontalMovement(result, horizontalMovement, excludeBody);
+      this.processHorizontalMovement(result, horizontalMovement, deltaTime, excludeBody);
     }
 
     // Process vertical movement (gravity, jumping)
@@ -107,11 +107,12 @@ export class CapsuleCollision {
   private processHorizontalMovement(
     result: CollisionResult, 
     movement: THREE.Vector3, 
+    deltaTime: number,
     excludeBody?: RAPIER.RigidBody
   ) {
+    const originalPosition = result.position.clone();
     let remainingMovement = movement.clone();
     let bounces = 0;
-    const originalLength = movement.length();
 
     while (remainingMovement.length() > 0.001 && bounces < this.config.maxBounces) {
       const hit = this.castCapsule(result.position, remainingMovement.normalize(), remainingMovement.length(), excludeBody);
@@ -151,11 +152,11 @@ export class CapsuleCollision {
       bounces++;
     }
 
-    // Update horizontal velocity based on actual movement
-    if (originalLength > 0) {
-      const actualMovement = this.tempVectors[4].subVectors(result.position, movement).setY(0);
-      result.velocity.x = actualMovement.x / (performance.now() / 1000 - performance.now() / 1000 + 0.016); // Approximate deltaTime
-      result.velocity.z = actualMovement.z / (performance.now() / 1000 - performance.now() / 1000 + 0.016);
+    // FIXED: Update horizontal velocity based on actual movement and proper deltaTime
+    if (deltaTime > 0) {
+      const actualMovement = this.tempVectors[4].subVectors(result.position, originalPosition);
+      result.velocity.x = actualMovement.x / deltaTime;
+      result.velocity.z = actualMovement.z / deltaTime;
     }
   }
 
