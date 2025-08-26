@@ -1,57 +1,69 @@
-// main.ts – crash-free, delta-time passed
+// src/main.ts
 import * as THREE from "three";
-// import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // remove if unused
+import RAPIER from "@dimforge/rapier3d-compat";
 import { PlayerController } from "./Player";
+import { CustomScene } from "./Scene";
 
 class FPSGame {
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(
-    75,
-    innerWidth / innerHeight,
-    0.1,
-    1000
-  );
-  private renderer = new THREE.WebGLRenderer({ antialias: true });
+  private scene: CustomScene = new CustomScene();
+  private camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer;
   private lastTime = performance.now();
 
-  // physics
-  private RAPIER: any;
   private world: any;
   private player: PlayerController | null = null;
 
   constructor() {
-    this.renderer.setSize(innerWidth, innerHeight);
+    this.camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
+    document.body.style.margin = "0";
     document.body.appendChild(this.renderer.domElement);
-    this.camera.position.set(0, 5, 10);
+
+    this.camera.position.set(0, 1.6, 6);
+    this.camera.lookAt(0, 1.6, 0);
+
+    window.addEventListener("resize", () => {
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
     this.init();
   }
 
-  async init() {
-    // 1. load rapier
-    this.RAPIER = await import("@dimforge/rapier3d-compat");
-    await this.RAPIER.init();
-    this.world = new this.RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  private async init() {
+    // init Rapier
+    await RAPIER.init();
+    this.world = new (RAPIER as any).World({ x: 0, y: -9.81, z: 0 });
 
-    // 2. simple ground
-    const ground = this.world.createRigidBody(
-      this.RAPIER.RigidBodyDesc.fixed()
-    );
-    this.world.createCollider(
-      this.RAPIER.ColliderDesc.cuboid(25, 0.1, 25),
-      ground
-    );
+    // physics ground
+    const groundRb = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(25, 0.1, 25), groundRb);
 
-    // 3. player (⚠️ ensure PlayerController does not `scene.add(Vector3)`)
+    // visible ground + scatter
+    this.scene.createGround(100);
+    this.scene.populateWithRandomObjects(30);
+
+    // spawn player (debugMesh:false to avoid camera-inside-mesh)
     this.player = new PlayerController(this.world, this.scene, {
-      position: new THREE.Vector3(0, 3, 0),
+      position: new THREE.Vector3(0, 1.6, 0),
+      debugMesh: false,
     });
     this.player.attachCamera(this.camera);
 
-    // 4. light & start
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(5, 10, 5);
-    this.scene.add(new THREE.AmbientLight(0x404040), dirLight);
+    // helpful visual grid
+    const grid = new THREE.GridHelper(100, 100, 0x333333, 0x222222);
+    grid.position.y = 0.01;
+    this.scene.add(grid);
 
     this.gameLoop();
   }
@@ -59,16 +71,12 @@ class FPSGame {
   private gameLoop = () => {
     requestAnimationFrame(this.gameLoop);
     const now = performance.now();
-    const dt = Math.min((now - this.lastTime) / 1000, 0.1); // seconds
+    const dt = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
 
-    // ✅ Rapier step takes no arguments
-    this.world.step();
-
-    // pass dt to player for movement updates
+    this.world?.step();
     this.player?.update(dt);
-
-    // render scene
+    this.scene.animateMeshes(now);
     this.renderer.render(this.scene, this.camera);
   };
 }
