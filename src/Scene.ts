@@ -1,226 +1,228 @@
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { createTerrain, createHouse, createTree, createRock, heightAt, TERRAIN_SIZE } from './map/MapGenerator.js';
 
 export class CustomScene extends THREE.Scene {
-    private meshes: THREE.Mesh[] = [];
-    private lights: THREE.Light[] = [];
+  private meshes: THREE.Object3D[] = [];
+  private lights: THREE.Light[] = [];
+  private terrainCollider?: any;
 
-    constructor() {
-        super();
-        this.setupDefaultLighting();
+  constructor(private world: any) {
+    super();
+    console.log("🏗️ Creating CustomScene...");
+    this.setupDefaultLighting();
+    this.createMap();
+    console.log("✅ CustomScene created with", this.meshes.length, "meshes");
+  }
+
+  addMesh(mesh: THREE.Object3D): void {
+    this.meshes.push(mesh);
+    this.add(mesh);
+    console.log("➕ Added mesh:", mesh.type, "Total meshes:", this.meshes.length);
+  }
+
+  addLight(light: THREE.Light): void {
+    this.lights.push(light);
+    this.add(light);
+    console.log("💡 Added light:", light.type);
+  }
+
+  setupDefaultLighting(): void {
+    console.log("💡 Setting up lighting...");
+    
+    // Ambient light - make it brighter for debugging
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    this.addLight(ambientLight);
+
+    // Directional light
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    directionalLight.position.set(50, 50, 25);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 200;
+    directionalLight.shadow.camera.left = -100;
+    directionalLight.shadow.camera.right = 100;
+    directionalLight.shadow.camera.top = 100;
+    directionalLight.shadow.camera.bottom = -100;
+    this.addLight(directionalLight);
+    
+    console.log("✅ Lighting setup complete");
+  }
+
+  private createMap(): void {
+    console.log("🗺️ Creating map...");
+    
+    try {
+      // 1. Create terrain with debug material
+      const terrain = this.createDebugTerrain();
+      this.addMesh(terrain);
+
+      // 2. Add some test objects first
+      this.addTestObjects();
+
+      // 3. Try physics if world exists
+      if (this.world) {
+        console.log("🔬 Setting up physics...");
+        this.setupTerrainPhysics();
+        // Only populate if physics works
+        this.populateMap();
+      } else {
+        console.warn("⚠️ No physics world provided");
+      }
+      
+    } catch (error) {
+      console.error("❌ Error creating map:", error);
     }
+  }
 
-    private setupDefaultLighting(): void {
-        // Add ambient light for general illumination
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-        this.addLight(ambientLight);
-
-        // Add directional light (sun-like)
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        directionalLight.position.set(10, 20, 10);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 50;
-        directionalLight.shadow.camera.left = -25;
-        directionalLight.shadow.camera.right = 25;
-        directionalLight.shadow.camera.top = 25;
-        directionalLight.shadow.camera.bottom = -25;
-        this.addLight(directionalLight);
-
-        // Add some point lights for atmosphere
-        this.addRandomPointLights();
+  // Debug terrain with simple material
+  private createDebugTerrain(): THREE.Mesh {
+    console.log("🌍 Creating debug terrain...");
+    
+    // Use the original terrain but with a simple material as fallback
+    let terrain;
+    try {
+      terrain = createTerrain();
+      console.log("✅ Original terrain created");
+    } catch (error) {
+      console.error("❌ Original terrain failed:", error);
+      // Fallback: simple plane
+      const geo = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 32, 32);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshStandardMaterial({ 
+        color: 0x4a7c59,
+        wireframe: false 
+      });
+      terrain = new THREE.Mesh(geo, mat);
+      console.log("✅ Fallback terrain created");
     }
+    
+    terrain.receiveShadow = true;
+    return terrain;
+  }
 
-    // Custom method to add meshes with tracking
-    public addMesh(mesh: THREE.Mesh): void {
-        this.meshes.push(mesh);
-        this.add(mesh);
-    }
+  // Add some test objects to verify rendering
+  private addTestObjects(): void {
+    console.log("🎯 Adding test objects...");
+    
+    // Test cube
+    const testCube = new THREE.Mesh(
+      new THREE.BoxGeometry(4, 4, 4),
+      new THREE.MeshStandardMaterial({ color: 0xff0000 })
+    );
+    testCube.position.set(10, 2, 10);
+    testCube.castShadow = true;
+    this.addMesh(testCube);
 
-    // Custom method to add lights with tracking
-    public addLight(light: THREE.Light): void {
-        this.lights.push(light);
-        this.add(light);
-    }
+    // Test sphere  
+    const testSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(2, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0x0000ff })
+    );
+    testSphere.position.set(-10, 2, -10);
+    testSphere.castShadow = true;
+    this.addMesh(testSphere);
+    
+    console.log("✅ Test objects added");
+  }
 
-    // Remove mesh and clean up
-    public removeMesh(mesh: THREE.Mesh): void {
-        const index = this.meshes.indexOf(mesh);
-        if (index > -1) {
-            this.meshes.splice(index, 1);
-            this.remove(mesh);
-            
-            // Clean up geometry and materials
-            if (mesh.geometry) {
-                mesh.geometry.dispose();
-            }
-            if (mesh.material) {
-                if (Array.isArray(mesh.material)) {
-                    mesh.material.forEach(material => material.dispose());
-                } else {
-                    mesh.material.dispose();
-                }
-            }
+  private setupTerrainPhysics(): void {
+    try {
+      const heights: number[] = [];
+      const n = 32; // Reduced for debugging
+      for (let i = 0; i <= n; i++) {
+        for (let j = 0; j <= n; j++) {
+          const x = (i / n - 0.5) * TERRAIN_SIZE;
+          const z = (j / n - 0.5) * TERRAIN_SIZE;
+          heights.push(heightAt(x, z));
         }
+      }
+      const terrainBodyDesc = RAPIER.RigidBodyDesc.fixed();
+      const terrainBody = this.world.createRigidBody(terrainBodyDesc);
+      const colliderDesc = RAPIER.ColliderDesc.heightfield(
+        n + 1,
+        n + 1,
+        new Float32Array(heights),
+        { x: TERRAIN_SIZE, y: 1, z: TERRAIN_SIZE }
+      );
+      this.terrainCollider = this.world.createCollider(colliderDesc, terrainBody);
+      console.log("✅ Terrain physics setup complete");
+    } catch (error) {
+      console.error("❌ Terrain physics failed:", error);
     }
+  }
 
-    // Get all meshes in the scene
-    public getMeshes(): THREE.Mesh[] {
-        return [...this.meshes];
-    }
-
-    // Get all lights in the scene
-    public getLights(): THREE.Light[] {
-        return [...this.lights];
-    }
-
-    // Method to animate all meshes
-    public animateMeshes(time: number): void {
-        this.meshes.forEach((mesh, index) => {
-            // Default rotation animation
-            mesh.rotation.x = time / 2000 + index * 0.5;
-            mesh.rotation.y = time / 1000 + index * 0.3;
-        });
-    }
-
-    // Method to create and add a basic cube
-    public createCube(
-        size: number = 0.2,
-        color: number = 0xff0000,
-        position: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
-    ): THREE.Mesh {
-        const geometry = new THREE.BoxGeometry(size, size, size);
-        const material = new THREE.MeshStandardMaterial({ color });
-        const cube = new THREE.Mesh(geometry, material);
-        
-        cube.position.copy(position);
-        cube.castShadow = true;
-        cube.receiveShadow = true;
-        this.addMesh(cube);
-        
-        return cube;
-    }
-
-    // Method to create and add a sphere
-    public createSphere(
-        radius: number = 0.1,
-        color: number = 0x00ff00,
-        position: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
-    ): THREE.Mesh {
-        const geometry = new THREE.SphereGeometry(radius, 32, 32);
-        const material = new THREE.MeshStandardMaterial({ color });
-        const sphere = new THREE.Mesh(geometry, material);
-        
-        sphere.position.copy(position);
-        sphere.castShadow = true;
-        sphere.receiveShadow = true;
-        this.addMesh(sphere);
-        
-        return sphere;
-    }
-
-    // Create a large ground plane
-    public createGround(size: number = 50): THREE.Mesh {
-        const geometry = new THREE.PlaneGeometry(size, size);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0x2d5a2d,
-            roughness: 0.8,
-            metalness: 0.1
-        });
-        const ground = new THREE.Mesh(geometry, material);
-        
-        ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
-        ground.position.y = 0;
-        ground.receiveShadow = true;
-        this.addMesh(ground);
-        
-        return ground;
-    }
-
-    // Add random point lights for atmosphere
-    private addRandomPointLights(): void {
-        const colors = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xfeca57, 0xff9ff3];
-        
-        for (let i = 0; i < 5; i++) {
-            const pointLight = new THREE.PointLight(colors[i], 0.5, 10);
-            pointLight.position.set(
-                (Math.random() - 0.5) * 30,
-                2 + Math.random() * 3,
-                (Math.random() - 0.5) * 30
-            );
-            this.addLight(pointLight);
+  private populateMap(): void {
+    console.log("🏠 Populating map...");
+    
+    try {
+      // Fewer objects for debugging
+      for (let i = 0; i < 5; i++) {
+        const [x, z] = randomCircle(30);
+        try {
+          const house = createHouse(x, z);
+          this.addMesh(house);
+          addBoxCollider(this.world, house.position, { x: 4, y: 3, z: 4 });
+        } catch (error) {
+          console.error("❌ Failed to create house:", error);
         }
-    }
+      }
 
-    // Generate random objects scattered around the scene
-    public populateWithRandomObjects(count: number = 20): void {
-        const shapes = ['cube', 'sphere'];
-        const colors = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xfeca57, 0xff9ff3, 0x96ceb4, 0xffeaa7];
-        
-        for (let i = 0; i < count; i++) {
-            const shape = shapes[Math.floor(Math.random() * shapes.length)];
-            const color = colors[Math.floor(Math.random() * colors.length)];
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 40, // Spread across ground
-                0.5 + Math.random() * 2,    // Above ground
-                (Math.random() - 0.5) * 40
-            );
-            
-            if (shape === 'cube') {
-                const size = 0.5 + Math.random() * 1.5;
-                this.createCube(size, color, position);
-            } else {
-                const radius = 0.3 + Math.random() * 0.8;
-                this.createSphere(radius, color, position);
-            }
+      for (let i = 0; i < 20; i++) {
+        const [x, z] = randomCircle(40);
+        try {
+          const tree = createTree(x, z);
+          this.addMesh(tree);
+        } catch (error) {
+          console.error("❌ Failed to create tree:", error);
         }
+      }
+      
+      console.log("✅ Map population complete");
+    } catch (error) {
+      console.error("❌ Map population failed:", error);
     }
+  }
 
-    // Method to clear all custom objects
-    public clearScene(): void {
-        // Remove all meshes
-        this.meshes.forEach(mesh => {
-            this.remove(mesh);
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (Array.isArray(mesh.material)) {
-                    mesh.material.forEach(material => material.dispose());
-                } else {
-                    mesh.material.dispose();
-                }
-            }
-        });
-        this.meshes = [];
+  clearScene(): void {
+    this.meshes.forEach(mesh => {
+      this.remove(mesh);
+      if (mesh instanceof THREE.Mesh) {
+        mesh.geometry?.dispose();
+        if (mesh.material instanceof THREE.Material) {
+          mesh.material.dispose();
+        } else if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(mat => mat.dispose());
+        }
+      }
+    });
+    this.meshes = [];
+    this.lights.forEach(light => this.remove(light));
+    this.lights = [];
+    this.terrainCollider?.remove();
+    this.terrainCollider = undefined;
+  }
 
-        // Remove all lights except defaults
-        this.lights.forEach(light => {
-            this.remove(light);
-        });
-        this.lights = [];
-        
-        // Re-add default lighting
-        this.setupDefaultLighting();
-    }
+  getWorld(): any { return this.world; }
+  getMeshes(): THREE.Object3D[] { return [...this.meshes]; }
+}
 
-    // Get scene statistics
-    public getStats(): { meshes: number; lights: number; triangles: number } {
-        let triangles = 0;
-        this.meshes.forEach(mesh => {
-            if (mesh.geometry) {
-                const geometry = mesh.geometry;
-                if (geometry.index) {
-                    triangles += geometry.index.count / 3;
-                } else if (geometry.attributes.position) {
-                    triangles += geometry.attributes.position.count / 3;
-                }
-            }
-        });
+function addBoxCollider(world: any, pos: THREE.Vector3, half: { x: number; y: number; z: number }) {
+  const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(pos.x, pos.y + half.y, pos.z);
+  const body = world.createRigidBody(bodyDesc);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(half.x, half.y, half.z), body);
+}
 
-        return {
-            meshes: this.meshes.length,
-            lights: this.lights.length,
-            triangles: Math.floor(triangles)
-        };
-    }
+function addSphereCollider(world: any, pos: THREE.Vector3, radius: number) {
+  const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(pos.x, pos.y + radius, pos.z);
+  const body = world.createRigidBody(bodyDesc);
+  world.createCollider(RAPIER.ColliderDesc.ball(radius), body);
+}
+
+function randomCircle(radius: number): [number, number] {
+  const a = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * radius;
+  return [Math.cos(a) * r, Math.sin(a) * r];
 }
