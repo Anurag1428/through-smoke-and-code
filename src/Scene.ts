@@ -130,25 +130,16 @@ export class CustomScene extends THREE.Scene {
 
   private setupTerrainPhysics(): void {
     try {
-      const heights: number[] = [];
-      const n = 32; // Reduced for debugging
-      for (let i = 0; i <= n; i++) {
-        for (let j = 0; j <= n; j++) {
-          const x = (i / n - 0.5) * TERRAIN_SIZE;
-          const z = (j / n - 0.5) * TERRAIN_SIZE;
-          heights.push(heightAt(x, z));
-        }
-      }
-      const terrainBodyDesc = RAPIER.RigidBodyDesc.fixed();
+      console.log("🔧 Using simple box collider instead of heightfield...");
+      // Use a simple box collider for the terrain instead of heightfield
+      const terrainBodyDesc = RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(0, -5, 0); // Position it below the terrain
       const terrainBody = this.world.createRigidBody(terrainBodyDesc);
-      const colliderDesc = RAPIER.ColliderDesc.heightfield(
-        n + 1,
-        n + 1,
-        new Float32Array(heights),
-        { x: TERRAIN_SIZE, y: 1, z: TERRAIN_SIZE }
-      );
+      
+      // Large box collider under the terrain
+      const colliderDesc = RAPIER.ColliderDesc.cuboid(TERRAIN_SIZE / 2, 10, TERRAIN_SIZE / 2);
       this.terrainCollider = this.world.createCollider(colliderDesc, terrainBody);
-      console.log("✅ Terrain physics setup complete");
+      console.log("✅ Terrain physics setup complete with box collider");
     } catch (error) {
       console.error("❌ Terrain physics failed:", error);
     }

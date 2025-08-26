@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
 import Player from "./Player.js";
-import { CustomScene } from "./Scene.js"; // ✅ Import your CustomScene
+import { CustomScene } from "./Scene.js";
 
 async function init() {
   console.log("🚀 Initializing game...");
@@ -17,29 +17,63 @@ async function init() {
   scene.background = new THREE.Color(0x87CEEB); // Sky blue instead of dark
   console.log("✅ CustomScene created");
 
-  // Camera setup
+  // FPS Camera setup
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 10, 20); // Higher up to see the terrain
   console.log("✅ Camera created");
 
   // Renderer setup
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true; // Enable shadows
+  renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
   console.log("✅ Renderer created");
 
   // Create player
   const player = new Player(scene, world);
+  player.setCamera(camera); // Connect camera to player for movement
   console.log("✅ Player created");
 
-  // Basic camera controls (optional - remove if you have FPS controls)
-  let mouseX = 0;
-  let mouseY = 0;
+  // FPS Camera Controls
+  let isLocked = false;
+  const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const PI_2 = Math.PI / 2;
+  let yaw = 0;
+  let pitch = 0;
+
+  // Pointer lock for FPS controls
+  function lock() {
+    document.body.requestPointerLock();
+  }
+
+  function unlock() {
+    document.exitPointerLock();
+  }
+
+  document.addEventListener('click', lock);
+  
+  document.addEventListener('pointerlockchange', () => {
+    isLocked = document.pointerLockElement === document.body;
+    console.log(isLocked ? "🔒 Mouse locked" : "🔓 Mouse unlocked");
+  });
+
   document.addEventListener('mousemove', (event) => {
-    mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-    mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+    if (!isLocked) return;
+
+    const sensitivity = 0.002;
+    yaw -= event.movementX * sensitivity;
+    pitch -= event.movementY * sensitivity;
+    pitch = Math.max(-PI_2, Math.min(PI_2, pitch));
+
+    euler.set(pitch, yaw, 0);
+    camera.quaternion.setFromEuler(euler);
+  });
+
+  // Escape to unlock
+  document.addEventListener('keydown', (event) => {
+    if (event.code === 'Escape') {
+      unlock();
+    }
   });
 
   // Resize handler
@@ -50,6 +84,8 @@ async function init() {
   });
 
   console.log("🎮 Starting game loop...");
+  console.log("💡 Click to lock mouse for FPS controls, ESC to unlock");
+  console.log("🎮 Use WASD to move, Space to jump");
 
   // Animation loop
   function animate() {
@@ -61,12 +97,10 @@ async function init() {
     // Update player
     player.update();
     
-    // Simple camera follow (replace with your FPS camera if you have one)
+    // FPS Camera follows player position
     const playerPos = player.mesh.position;
-    camera.position.x = playerPos.x + mouseX * 5;
-    camera.position.y = playerPos.y + 8;
-    camera.position.z = playerPos.z + 15;
-    camera.lookAt(playerPos);
+    camera.position.copy(playerPos);
+    camera.position.y += 1.6; // Eye level height
     
     // Render
     renderer.render(scene, camera);

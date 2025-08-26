@@ -3,21 +3,26 @@ import RAPIER from "@dimforge/rapier3d-compat";
 
 export default class Player {
   mesh: THREE.Mesh;
-  body: RAPIER.RigidBody;
-  world: RAPIER.World;
+  body: any;
+  world: any;
 
   private moveSpeed = 6;
   private jumpForce = 10;
   private isGrounded = false;
   private keys: Record<string, boolean> = {};
   private canJump = true;
+  private camera?: THREE.Camera;
 
-  constructor(scene: THREE.Scene, world: RAPIER.World) {
+  constructor(scene: THREE.Scene, world: any) {
     this.world = world;
 
-    // Player mesh (capsule for FPS)
+    // Player mesh (capsule for FPS) - make it invisible for true FPS
     const geometry = new THREE.CapsuleGeometry(0.4, 1, 8, 16);
-    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0x00ff00, 
+      transparent: true, 
+      opacity: 0.0  // Make invisible for FPS view
+    });
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.position.set(0, 2, 0);
     scene.add(this.mesh);
@@ -42,14 +47,28 @@ export default class Player {
     });
   }
 
+  // Set camera reference for movement direction
+  setCamera(camera: THREE.Camera) {
+    this.camera = camera;
+  }
+
   update() {
-    // --- Movement ---
-    let dir = new THREE.Vector3();
-    if (this.keys["KeyW"] || this.keys["ArrowUp"]) dir.z -= 1;
-    if (this.keys["KeyS"] || this.keys["ArrowDown"]) dir.z += 1;
-    if (this.keys["KeyA"] || this.keys["ArrowLeft"]) dir.x -= 1;
-    if (this.keys["KeyD"] || this.keys["ArrowRight"]) dir.x += 1;
-    dir.normalize();
+    // --- Movement relative to camera direction ---
+    const direction = new THREE.Vector3();
+    
+    if (this.keys["KeyW"] || this.keys["ArrowUp"]) direction.z -= 1;
+    if (this.keys["KeyS"] || this.keys["ArrowDown"]) direction.z += 1;
+    if (this.keys["KeyA"] || this.keys["ArrowLeft"]) direction.x -= 1;
+    if (this.keys["KeyD"] || this.keys["ArrowRight"]) direction.x += 1;
+    
+    direction.normalize();
+    
+    // Apply camera rotation to movement direction
+    if (this.camera && direction.length() > 0) {
+      direction.applyQuaternion(this.camera.quaternion);
+      direction.y = 0; // Keep movement horizontal
+      direction.normalize();
+    }
 
     // Check if grounded (raycast down)
     const pos = this.body.translation();
@@ -74,14 +93,15 @@ export default class Player {
 
     // Set horizontal velocity
     const speed = this.moveSpeed;
-    const targetVel = { x: dir.x * speed, y: this.body.linvel().y, z: dir.z * speed };
+    const targetVel = { 
+      x: direction.x * speed, 
+      y: this.body.linvel().y, 
+      z: direction.z * speed 
+    };
     this.body.setLinvel(targetVel, true);
 
-    // Sync mesh with physics - FIXED TYPO
+    // Sync mesh with physics
     const position = this.body.translation();
     this.mesh.position.set(position.x, position.y, position.z);
-
-    // No rotation for FPS player
-    this.mesh.rotation.set(0, 0, 0);
   }
 }
