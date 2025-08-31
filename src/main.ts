@@ -5,6 +5,14 @@ import { initRapier } from "./physics.js";
 
 async function init() {
   console.log("🚀 Initializing game...");
+  
+  // Setup page styles to prevent scrolling and improve game experience
+  document.body.style.margin = '0';
+  document.body.style.padding = '0';
+  document.body.style.overflow = 'hidden';
+  document.body.style.backgroundColor = '#000';
+  document.body.style.fontFamily = 'Arial, sans-serif';
+  
   const RAPIER = await initRapier();
   console.log("✅ Rapier initialized");
 
@@ -69,10 +77,15 @@ async function init() {
     camera.quaternion.setFromEuler(euler);
   });
 
-  // Escape to unlock
+  // Global key handler
   document.addEventListener('keydown', (event) => {
     if (event.code === 'Escape') {
       unlock();
+    }
+    
+    // Prevent spacebar from scrolling the page
+    if (event.code === 'Space') {
+      event.preventDefault();
     }
   });
 
