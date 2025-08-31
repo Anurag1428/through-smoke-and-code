@@ -7,6 +7,7 @@ export default class Player {
   world: any;
 
   private moveSpeed = 6;
+  private sprintSpeed = 12;
   private jumpForce = 10;
   private isGrounded = false;
   private keys: Record<string, boolean> = {};
@@ -46,11 +47,18 @@ export default class Player {
   private setupInput(): void {
     window.addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
+      
+      // Debug key presses (remove this later)
+      if (e.code === "Space") console.log("🔑 Space pressed");
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") console.log("🔑 Shift pressed");
     });
     
     window.addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
-      if (e.code === "Space" || e.code === "Numpad0") this.canJump = true;
+      if (e.code === "Space" || e.code === "Numpad0") {
+        this.canJump = true;
+        console.log("🔑 Space released - can jump again");
+      }
     });
 
     // Mouse controls for shooting
@@ -120,20 +128,34 @@ export default class Player {
     this.isGrounded = !!(hit && hit.toi !== undefined);
 
     // Jump (only once per key press)
-    if (
-      this.isGrounded &&
-      (this.keys["Space"] || this.keys["Numpad0"]) &&
-      this.canJump
-    ) {
+    const spacePressed = this.keys["Space"] || this.keys["Numpad0"];
+    
+    if (this.isGrounded && spacePressed && this.canJump) {
+      console.log("🚀 Jumping!");
       this.body.setLinvel(
         { x: this.body.linvel().x, y: this.jumpForce, z: this.body.linvel().z },
         true
       );
       this.canJump = false;
     }
+    
+    // Debug info (remove this later)
+    if (spacePressed && !this.canJump) {
+      console.log("⏳ Jump on cooldown");
+    }
+    if (spacePressed && !this.isGrounded) {
+      console.log("🌍 Not grounded");
+    }
 
-    // Set horizontal velocity
-    const speed = this.moveSpeed;
+    // Set horizontal velocity (with sprint)
+    const isSprintPressed = this.keys["ShiftLeft"] || this.keys["ShiftRight"];
+    const speed = isSprintPressed ? this.sprintSpeed : this.moveSpeed;
+    
+    // Debug sprint (remove this later)
+    if (isSprintPressed && direction.length() > 0) {
+      console.log("🏃 Sprinting at speed:", speed);
+    }
+    
     const targetVel = { 
       x: direction.x * speed, 
       y: this.body.linvel().y, 
