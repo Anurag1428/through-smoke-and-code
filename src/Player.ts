@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import RAPIER from "@dimforge/rapier3d-compat";
+import { getRapier } from "./physics.js";
 
 export default class Player {
   mesh: THREE.Mesh;
@@ -12,6 +12,7 @@ export default class Player {
   private keys: Record<string, boolean> = {};
   private canJump = true;
   private camera?: THREE.Camera;
+  private crosshair?: HTMLElement;
 
   constructor(scene: THREE.Scene, world: any) {
     this.world = world;
@@ -28,6 +29,7 @@ export default class Player {
     scene.add(this.mesh);
 
     // Player rigid body (capsule)
+    const RAPIER = getRapier();
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(0, 2, 0)
       .lockRotations();
@@ -37,14 +39,52 @@ export default class Player {
     const colliderDesc = RAPIER.ColliderDesc.capsule(0.5, 0.4).setFriction(0.2);
     world.createCollider(colliderDesc, this.body);
 
-    // Input
+    this.setupInput();
+    this.createCrosshair();
+  }
+
+  private setupInput(): void {
     window.addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
     });
+    
     window.addEventListener("keyup", (e) => {
       this.keys[e.code] = false;
       if (e.code === "Space" || e.code === "Numpad0") this.canJump = true;
     });
+
+    // Mouse controls for shooting
+    window.addEventListener("mousedown", (e) => {
+      if (e.button === 0 && document.pointerLockElement) { // Left click
+        this.shoot();
+      }
+    });
+  }
+
+  private createCrosshair(): void {
+    this.crosshair = document.createElement('div');
+    this.crosshair.style.position = 'fixed';
+    this.crosshair.style.top = '50%';
+    this.crosshair.style.left = '50%';
+    this.crosshair.style.width = '4px';
+    this.crosshair.style.height = '4px';
+    this.crosshair.style.backgroundColor = 'white';
+    this.crosshair.style.transform = 'translate(-50%, -50%)';
+    this.crosshair.style.borderRadius = '50%';
+    this.crosshair.style.pointerEvents = 'none';
+    this.crosshair.style.zIndex = '1000';
+    document.body.appendChild(this.crosshair);
+  }
+
+  private shoot(): void {
+    // Simple shooting for now - just log to console
+    if (this.camera) {
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+      
+      // TODO: Check for hits against other players/objects
+      console.log(`🔫 Fired!`);
+    }
   }
 
   // Set camera reference for movement direction
@@ -74,6 +114,7 @@ export default class Player {
     const pos = this.body.translation();
     const rayOrigin = { x: pos.x, y: pos.y - 0.6, z: pos.z };
     const rayDir = { x: 0, y: -1, z: 0 };
+    const RAPIER = getRapier();
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
     const hit = this.world.castRay(ray, 0.15, true);
     this.isGrounded = !!(hit && hit.toi !== undefined);

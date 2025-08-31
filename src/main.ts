@@ -1,11 +1,11 @@
 import * as THREE from "three";
-import RAPIER from "@dimforge/rapier3d-compat";
 import Player from "./Player.js";
 import { CustomScene } from "./Scene.js";
+import { initRapier } from "./physics.js";
 
 async function init() {
   console.log("🚀 Initializing game...");
-  await RAPIER.init();
+  const RAPIER = await initRapier();
   console.log("✅ Rapier initialized");
 
   // Create physics world
