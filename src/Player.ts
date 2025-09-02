@@ -186,8 +186,9 @@ export default class Player {
       console.log("  - Hit distance:", hit ? hit.toi : "no hit");
     }
 
-    if (this.isGrounded && spacePressed && this.canJump) {
-      console.log("🚀 Jumping!");
+    // Temporary fix: Jump without grounding check (like 'J' key)
+    if (spacePressed && this.canJump) {
+      console.log("🚀 Jumping with spacebar!");
       this.body.setLinvel(
         { x: this.body.linvel().x, y: this.jumpForce, z: this.body.linvel().z },
         true

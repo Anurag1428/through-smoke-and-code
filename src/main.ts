@@ -71,7 +71,10 @@ async function init() {
     const sensitivity = 0.002;
     yaw -= event.movementX * sensitivity;
     pitch -= event.movementY * sensitivity;
-    pitch = Math.max(-PI_2, Math.min(PI_2, pitch));
+    
+    // Slightly less restrictive pitch limits to prevent camera lock
+    const maxPitch = PI_2 - 0.1; // Leave small margin
+    pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
 
     euler.set(pitch, yaw, 0);
     camera.quaternion.setFromEuler(euler);
