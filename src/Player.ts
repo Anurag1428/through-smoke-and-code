@@ -73,23 +73,7 @@ export default class Player {
 
       this.keys[e.code] = true;
 
-      // Debug key presses (remove this later)
-      if (e.code === "Space") console.log("🔑 Space pressed");
-      if (e.code === "ShiftLeft" || e.code === "ShiftRight")
-        console.log("🔑 Shift pressed");
 
-      // Emergency jump test (remove this later) - press 'J' to jump without grounding check
-      if (e.code === "KeyJ") {
-        console.log("🚀 Emergency jump!");
-        this.body.setLinvel(
-          {
-            x: this.body.linvel().x,
-            y: this.jumpForce,
-            z: this.body.linvel().z,
-          },
-          true
-        );
-      }
     });
 
     window.addEventListener("keyup", (e) => {
@@ -101,7 +85,6 @@ export default class Player {
       this.keys[e.code] = false;
       if (e.code === "Space" || e.code === "Numpad0") {
         this.canJump = true;
-        console.log("🔑 Space released - can jump again");
       }
     });
 
@@ -163,32 +146,41 @@ export default class Player {
       direction.normalize();
     }
 
-    // Check if grounded (raycast down)
+    // Check if grounded using multiple methods
     const pos = this.body.translation();
-    const rayOrigin = { x: pos.x, y: pos.y - 0.6, z: pos.z };
+    const velocity = this.body.linvel();
+    
+    // Method 1: Raycast grounding
+    const rayOrigin = { x: pos.x, y: pos.y - 0.8, z: pos.z };
     const rayDir = { x: 0, y: -1, z: 0 };
     const RAPIER = getRapier();
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const hit = this.world.castRay(ray, 0.15, true);
-    this.isGrounded = !!(hit && hit.toi !== undefined);
+    const hit = this.world.castRay(ray, 0.3, true);
+    const raycastGrounded = !!(hit && hit.toi !== undefined && hit.toi < 0.2);
+    
+    // Method 2: Velocity-based grounding (if falling very slowly or not at all)
+    const velocityGrounded = Math.abs(velocity.y) < 0.1 && pos.y > 0.5;
+    
+    // Use either method for grounding
+    this.isGrounded = raycastGrounded || velocityGrounded;
 
-    // Jump (only once per key press)
+    // Jump (only when grounded and key pressed)
     const spacePressed = this.keys["Space"] || this.keys["Numpad0"];
 
-    // Detailed debugging
+    // Debug grounding detection
     if (spacePressed) {
       console.log("🔍 Jump Debug:");
       console.log("  - Space pressed:", spacePressed);
-      console.log("  - Is grounded:", this.isGrounded);
+      console.log("  - Raycast grounded:", raycastGrounded);
+      console.log("  - Velocity grounded:", velocityGrounded);
+      console.log("  - Final grounded:", this.isGrounded);
       console.log("  - Can jump:", this.canJump);
+      console.log("  - Player Y velocity:", velocity.y);
       console.log("  - Player Y position:", pos.y);
-      console.log("  - Raycast hit:", hit);
-      console.log("  - Hit distance:", hit ? hit.toi : "no hit");
     }
 
-    // Temporary fix: Jump without grounding check (like 'J' key)
-    if (spacePressed && this.canJump) {
-      console.log("🚀 Jumping with spacebar!");
+    if (spacePressed && this.canJump && this.isGrounded) {
+      console.log("🚀 Jumping!");
       this.body.setLinvel(
         { x: this.body.linvel().x, y: this.jumpForce, z: this.body.linvel().z },
         true
@@ -196,22 +188,11 @@ export default class Player {
       this.canJump = false;
     }
 
-    // Debug info (remove this later)
-    if (spacePressed && !this.canJump) {
-      console.log("⏳ Jump on cooldown");
-    }
-    if (spacePressed && !this.isGrounded) {
-      console.log("🌍 Not grounded - raycast result:", hit);
-    }
-
     // Set horizontal velocity (with sprint)
     const isSprintPressed = this.keys["ShiftLeft"] || this.keys["ShiftRight"];
     const speed = isSprintPressed ? this.sprintSpeed : this.moveSpeed;
 
-    // Debug sprint (remove this later)
-    if (isSprintPressed && direction.length() > 0) {
-      console.log("🏃 Sprinting at speed:", speed);
-    }
+
 
     const targetVel = {
       x: direction.x * speed,
